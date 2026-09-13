@@ -1,0 +1,21 @@
+[project]
+name = "job-hunt-agent"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "Thyme Pataradilok", email = "thyme.pataradilok@gmail.com" }
+]
+requires-python = ">=3.14"
+dependencies = [
+    "google-genai>=2.23.0",
+    "numpy>=2.5.3",
+    "python-dotenv>=1.2.3",
+]
+
+[project.scripts]
+job-hunt-agent = "job_hunt_agent:main"
+
+[build-system]
+requires = ["uv_build>=0.12.11,<0.13.0"]
+build-backend = "uv_build"
