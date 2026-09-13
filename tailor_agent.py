@@ -39,26 +39,24 @@ EMBED_MODEL = "gemini-embedding-001"
 GEN_MODEL = "gemini-3.6-flash"
 
 # ---------------------------------------------------------------------------
-# 2. YOUR DATA — replace these with your real CV bullets and a real job posting
+# 2. YOUR DATA — now loaded from plain text files instead of hardcoded here
 # ---------------------------------------------------------------------------
-CV_BULLETS = [
-    "Built a data pipeline in Python that cleaned and merged 5 messy CSV sources into one reporting table, cutting manual reporting time by 60%.",
-    "Led a team of 3 interns on a university research project analyzing survey data with pandas and matplotlib.",
-    "Designed and taught a 6-week intro-to-SQL workshop for 20 classmates.",
-    "Wrote automated tests for a Flask web app, raising test coverage from 40% to 85%.",
-    "Presented quarterly findings to non-technical stakeholders using Tableau dashboards.",
-    "Volunteered as a social media coordinator for a student club, growing Instagram followers by 2,000 in one semester.",
-]
-
-JOB_DESCRIPTION = """
-We're hiring a Junior Data Analyst intern. You'll help clean and analyze
-internal datasets, build dashboards for stakeholders, and support the data
-engineering team with basic pipeline maintenance. Python and SQL experience
-required. Bonus: experience communicating data insights to non-technical
-audiences, and any exposure to automated testing or CI is a plus.
-"""
+CV_PATH = "cv.txt"                    # one bullet per line
+JOB_DESCRIPTION_PATH = "job_description.txt"  # the full posting, as plain text
 
 TOP_K = 3  # how many of your bullets to actually send to the model
+
+
+def load_cv_bullets(path: str = CV_PATH) -> list[str]:
+    """Reads cv.txt and returns one CV bullet per non-empty line."""
+    with open(path, "r", encoding="utf-8") as f:
+        return [line.strip() for line in f if line.strip()]
+
+
+def load_job_description(path: str = JOB_DESCRIPTION_PATH) -> str:
+    """Reads the full job posting as one block of text."""
+    with open(path, "r", encoding="utf-8") as f:
+        return f.read().strip()
 
 
 # ---------------------------------------------------------------------------
@@ -126,11 +124,14 @@ related experience not yet listed. Keep the tone professional and concise.
 # 6. RUN IT
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
+    cv_bullets = load_cv_bullets()
+    job_description = load_job_description()
+
     print("Finding your most relevant CV bullets for this job...")
-    top_bullets = retrieve_relevant_bullets(CV_BULLETS, JOB_DESCRIPTION, TOP_K)
+    top_bullets = retrieve_relevant_bullets(cv_bullets, job_description, TOP_K)
 
     print("\nGenerating tailored suggestions...\n")
-    suggestions = generate_tailored_suggestions(top_bullets, JOB_DESCRIPTION)
+    suggestions = generate_tailored_suggestions(top_bullets, job_description)
 
     print("=" * 70)
     print("TAILORED SUGGESTIONS")

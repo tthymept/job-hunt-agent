@@ -1,0 +1,6 @@
+Built a data pipeline in Python that cleaned and merged 5 messy CSV sources into one reporting table, cutting manual reporting time by 60%.
+Led a team of 3 interns on a university research project analyzing survey data with pandas and matplotlib.
+Designed and taught a 6-week intro-to-SQL workshop for 20 classmates.
+Wrote automated tests for a Flask web app, raising test coverage from 40% to 85%.
+Presented quarterly findings to non-technical stakeholders using Tableau dashboards.
+Volunteered as a social media coordinator for a student club, growing Instagram followers by 2,000 in one semester.

@@ -338,6 +338,7 @@ dependencies = [
     { name = "google-genai" },
     { name = "numpy" },
     { name = "python-dotenv" },
+    { name = "requests" },
 ]
 
 [package.metadata]
@@ -345,6 +346,7 @@ requires-dist = [
     { name = "google-genai", specifier = ">=2.23.0" },
     { name = "numpy", specifier = ">=2.5.3" },
     { name = "python-dotenv", specifier = ">=1.2.3" },
+    { name = "requests", specifier = ">=2.34.2" },
 ]
 
 [[package]]

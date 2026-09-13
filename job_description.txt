@@ -1,0 +1,5 @@
+We're hiring a Junior Data Analyst intern. You'll help clean and analyze
+internal datasets, build dashboards for stakeholders, and support the data
+engineering team with basic pipeline maintenance. Python and SQL experience
+required. Bonus: experience communicating data insights to non-technical
+audiences, and any exposure to automated testing or CI is a plus.
