@@ -40,7 +40,7 @@ def search_jobs(role: str, location: str, num_pages: int = 1, remote_only: bool 
         "query": query,
         "page": "1",
         "num_pages": str(num_pages),
-        "date_posted": "week",
+        "date_posted": "month", # month, week, today
     }
     if remote_only:
         params["remote_jobs_only"] = "true"
@@ -158,7 +158,7 @@ if __name__ == "__main__":
     ROLE = "data scientist intern"
     LOCATION = "Singapore"
 
-    jobs = search_jobs(role=ROLE, location=LOCATION, num_pages=1)
+    jobs = search_jobs(role=ROLE, location=LOCATION, num_pages=6)
     print(f"Found {len(jobs)} postings")
 
     conn = psycopg2.connect(DATABASE_URL)
