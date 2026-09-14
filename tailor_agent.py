@@ -97,7 +97,8 @@ def retrieve_relevant_bullets(bullets: list[str], job_description: str, top_k: i
 def generate_tailored_suggestions(relevant_bullets: list[str], job_description: str) -> str:
     bullets_text = "\n".join(f"- {b}" for b in relevant_bullets)
 
-    prompt = f"""You are a career coach helping a candidate tailor their CV for one specific job.
+    prompt = f"""Given this candidate's resume and this job posting, suggest 3-5 
+specific tailoring changes (which bullets to emphasize, what to reword, what's missing).
 
 JOB DESCRIPTION:
 {job_description}

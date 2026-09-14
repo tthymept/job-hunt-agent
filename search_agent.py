@@ -40,7 +40,7 @@ def search_jobs(role: str, location: str, num_pages: int = 1, remote_only: bool 
         "query": query,
         "page": "1",
         "num_pages": str(num_pages),
-        "date_posted": "month", # month, week, today
+        "date_posted": "today", # month, week, today
     }
     if remote_only:
         params["remote_jobs_only"] = "true"
@@ -106,7 +106,7 @@ def enrich_pending_jobs(conn) -> None:
     cur = conn.cursor()
     cur.execute("""
         SELECT job_id, job_description FROM jobs
-        WHERE enrichment_status IN ('pending', 'failed') AND enrichment_attempts < 3
+        WHERE enrichment_status IN ('pending', 'failed') AND enrichment_attempts < 5
     """)
     rows = cur.fetchall()
 
@@ -158,11 +158,11 @@ if __name__ == "__main__":
     ROLE = "data scientist intern"
     LOCATION = "Singapore"
 
-    jobs = search_jobs(role=ROLE, location=LOCATION, num_pages=6)
+    jobs = search_jobs(role=ROLE, location=LOCATION, num_pages=3)
     print(f"Found {len(jobs)} postings")
 
     conn = psycopg2.connect(DATABASE_URL)
     insert_jobs(jobs, conn)
     enrich_pending_jobs(conn)
     conn.close()
-    print("Done.")
+    print("Done.")  
