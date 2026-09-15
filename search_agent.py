@@ -166,3 +166,20 @@ if __name__ == "__main__":
     enrich_pending_jobs(conn)
     conn.close()
     print("Done.")  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# ENRICHMENT ALL AT ONCE CAN OR NOT 
+# PDF storing database -> authentication + document_file table
+# read PDF file in supabase in python script

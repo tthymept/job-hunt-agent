@@ -11,3 +11,4 @@ wheels/
 .env
 cv.pdf
 cv.txt
+cv_structured.json
