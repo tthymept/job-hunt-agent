@@ -2,7 +2,7 @@
 search_agent.py
 ----------------
 Search jobs via JSearch -> insert raw rows into Postgres (pending)
--> enrich pending rows with LLM-extracted fields -> update rows.
+-> enrich pending rows with LLM-extracted fields, batched N-per-call -> update rows.
 
 Setup:
     uv add requests python-dotenv psycopg2-binary google-genai
@@ -30,6 +30,8 @@ HEADERS = {
 }
 
 gemini_client = genai.Client(api_key=GEMINI_API_KEY)
+
+BATCH_SIZE = 5  # jobs per Gemini call -- tune down if descriptions are long / hitting token limits
 
 
 # ---------- STEP 1: search ----------
@@ -77,42 +79,89 @@ def insert_jobs(jobs: list[dict], conn) -> None:
     cur.close()
 
 
-# ---------- STEP 3: extract missing info via LLM ----------
+# ---------- STEP 3: extract missing info via LLM (batched -- N jobs per call) ----------
 
-def extract_job_info(description: str) -> dict:
-    prompt = f"""Extract the following from this internship posting. Return ONLY valid JSON, no markdown, no other text:
-{{
-  "duration": "string or null - human-readable internship length/dates if mentioned",
-  "min_duration_months": "integer or null - convert duration to number of months (e.g. '12-week' -> 3)",
-  "skills": ["array of specific tools/skills mentioned"],
-  "application_deadline": "string or null - explicit deadline if stated",
-  "short_description": "one sentence summary"
-}}
+def chunked(rows: list, size: int):
+    for i in range(0, len(rows), size):
+        yield rows[i:i + size]
 
-Posting:
-{description}
+
+def extract_job_info_batch(jobs: list[tuple[str, str]]) -> dict[str, dict]:
+    """
+    jobs: list of (job_id, description) tuples.
+    Returns {job_id: extracted_dict} for every job the model successfully returned.
+    """
+    postings = [{"job_id": jid, "description": desc or ""} for jid, desc in jobs]
+
+    prompt = f"""Extract structured info for EACH job posting below. Return ONLY a JSON array
+(no markdown, no other text), one object per posting, in this exact shape:
+
+[
+  {{
+    "job_id": "must match the input job_id exactly",
+    "duration": "string or null - human-readable internship length/dates if mentioned",
+    "min_duration_months": "integer or null - convert duration to number of months (e.g. '12-week' -> 3)",
+    "skills": ["array of specific tools/skills mentioned"],
+    "application_deadline": "string or null - explicit deadline if stated",
+    "short_description": "one sentence summary"
+  }}
+]
+
+Postings:
+{json.dumps(postings, indent=2)}
 """
+
     response = gemini_client.models.generate_content(
         model="gemini-3.6-flash",
         contents=prompt,
     )
     text = response.text.strip().removeprefix("```json").removesuffix("```").strip()
-    return json.loads(text)
+    results = json.loads(text)  # expects a list
+
+    return {r["job_id"]: r for r in results if "job_id" in r}
 
 
-# ---------- STEP 4: enrich pending rows ----------
+# ---------- STEP 4: enrich pending rows, processed in batches ----------
 
-def enrich_pending_jobs(conn) -> None:
+def enrich_pending_jobs(conn, batch_size: int = BATCH_SIZE) -> None:
     cur = conn.cursor()
     cur.execute("""
         SELECT job_id, job_description FROM jobs
         WHERE enrichment_status IN ('pending', 'failed') AND enrichment_attempts < 5
     """)
     rows = cur.fetchall()
+    print(f"Enriching {len(rows)} job(s) in batches of {batch_size} "
+          f"({-(-len(rows) // batch_size)} Gemini call(s) total)")
 
-    for job_id, description in rows:
+    for batch in chunked(rows, batch_size):
+        job_ids_in_batch = [jid for jid, _ in batch]
+
         try:
-            extracted = extract_job_info(description or "")
+            results = extract_job_info_batch(batch)
+        except Exception as e:
+            # whole batch failed (bad JSON, API error, etc.) -- mark all as failed, retry later
+            print(f"Batch failed entirely {job_ids_in_batch}: {e}")
+            cur.execute("""
+                UPDATE jobs
+                SET enrichment_status='failed', enrichment_attempts = enrichment_attempts + 1
+                WHERE job_id = ANY(%s)
+            """, (job_ids_in_batch,))
+            conn.commit()
+            time.sleep(13)
+            continue
+
+        for job_id in job_ids_in_batch:
+            extracted = results.get(job_id)
+            if extracted is None:
+                # model returned the batch but skipped/mismatched this specific job_id
+                print(f"No result returned for {job_id}, marking failed")
+                cur.execute("""
+                    UPDATE jobs
+                    SET enrichment_status='failed', enrichment_attempts = enrichment_attempts + 1
+                    WHERE job_id=%s
+                """, (job_id,))
+                continue
+
             cur.execute("""
                 UPDATE jobs
                 SET duration=%s, min_duration_months=%s, skills=%s,
@@ -124,19 +173,12 @@ def enrich_pending_jobs(conn) -> None:
                 extracted.get("skills"), extracted.get("application_deadline"),
                 extracted.get("short_description"), job_id,
             ))
-            conn.commit()
-        except Exception as e:
-            print(f"Failed to enrich {job_id}: {e}")
-            cur.execute("""
-                UPDATE jobs
-                SET enrichment_status='failed', enrichment_attempts = enrichment_attempts + 1
-                WHERE job_id=%s
-            """, (job_id,))
-            conn.commit()
 
-        time.sleep(13)
+        conn.commit()
+        time.sleep(13)  # still respect per-minute rate limit between batches
 
     cur.close()
+
 
 # ---------- Debugging function(s) ----------
 
@@ -148,7 +190,7 @@ def print_job_summary(jobs: list[dict]) -> None:
         source = job.get("job_publisher", "Unknown source")   # e.g. "LinkedIn", "Indeed"
         link = job.get("job_apply_link", "")
         posted = job.get("job_posted_at", "Unknown date")
- 
+
         print(f"- {title} @ {company}")
         print(f"  Source: {source}  |  Posted: {posted}")
         print(f"  Apply: {link}\n")
@@ -165,21 +207,4 @@ if __name__ == "__main__":
     insert_jobs(jobs, conn)
     enrich_pending_jobs(conn)
     conn.close()
-    print("Done.")  
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# ENRICHMENT ALL AT ONCE CAN OR NOT 
-# PDF storing database -> authentication + document_file table
-# read PDF file in supabase in python script
+    print("Done.")
