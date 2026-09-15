@@ -39,7 +39,7 @@ supabase = create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_SERVIC
 #   ALTER TABLE users ADD COLUMN resume_path TEXT;
 #   ALTER TABLE users ADD COLUMN cv_structure JSONB;
 
-GEN_MODEL = "gemini-3.6-flash"
+GEN_MODEL = "gemini-3.5-flash-lite"
 BUCKET = "resumes"
 LOCAL_CV_PATH = "cv.pdf"        # only used for the one-time upload step
 OUTPUT_PATH = "cv_structured.json"

@@ -42,7 +42,7 @@ def search_jobs(role: str, location: str, num_pages: int = 1, remote_only: bool 
         "query": query,
         "page": "1",
         "num_pages": str(num_pages),
-        "date_posted": "today", # month, week, today
+        "date_posted": "week", # month, week, today
     }
     if remote_only:
         params["remote_jobs_only"] = "true"
@@ -112,7 +112,7 @@ Postings:
 """
 
     response = gemini_client.models.generate_content(
-        model="gemini-3.6-flash",
+        model="gemini-3.5-flash-lite", #"gemini-3.6-flash",
         contents=prompt,
     )
     text = response.text.strip().removeprefix("```json").removesuffix("```").strip()
@@ -200,7 +200,7 @@ if __name__ == "__main__":
     ROLE = "data scientist intern"
     LOCATION = "Singapore"
 
-    jobs = search_jobs(role=ROLE, location=LOCATION, num_pages=3)
+    jobs = search_jobs(role=ROLE, location=LOCATION, num_pages=2)
     print(f"Found {len(jobs)} postings")
 
     conn = psycopg2.connect(DATABASE_URL)
