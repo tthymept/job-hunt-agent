@@ -13,6 +13,7 @@ import json
 import time
 import requests
 import psycopg2
+import pycountry
 from pathlib import Path
 from dotenv import load_dotenv
 from google import genai
@@ -34,24 +35,56 @@ gemini_client = genai.Client(api_key=GEMINI_API_KEY)
 BATCH_SIZE = 10  # jobs per Gemini call -- tune down if descriptions are long / hitting token limits
 
 
+def get_country_code(country_name: str) -> str | None:
+    try:
+        return pycountry.countries.lookup(country_name).alpha_2.lower()
+    except LookupError:
+        return None
+
+#get_country_code("United States")  # -> "us"
+#get_country_code("Thailand")       # -> "th"
+
+
+def build_location_text(country: str, city: str | None) -> str:
+    if not city or city.strip().lower() == country.strip().lower():
+        return country
+    return f"{city}, {country}"
+
 # ---------- STEP 1: search ----------
 
-def search_jobs(role: str, location: str, num_pages: int = 1, remote_only: bool = False,
-                 date_posted: str = "week") -> list[dict]:
-    query = f"{role} in {location}"
-    params = {
-        "query": query,
-        "page": "1",
-        "num_pages": str(num_pages),
-        "date_posted": date_posted,
-    }
-    if remote_only:
-        params["remote_jobs_only"] = "true"
+def search_jobs(role: str, country: str, city: str | None = None, num_pages: int = 3,
+                 date_posted: str = "today") -> list[dict]:
+    country_code = get_country_code(country)
+    location_text = build_location_text(country, city)
+    query = f"{role} in {location_text}"
 
-    response = requests.get(JSEARCH_URL, headers=HEADERS, params=params)
-    response.raise_for_status()
-    data = response.json()
-    return data.get("data", {}).get("jobs", [])
+    all_jobs = []
+    cursor = None
+
+    for _ in range(num_pages):
+        params = {
+            "query": query,
+            "date_posted": date_posted,
+            "country": country_code,
+        }
+        if cursor:
+            params["cursor"] = cursor
+
+        response = requests.get(JSEARCH_URL, headers=HEADERS, params=params)
+        response.raise_for_status()
+        data = response.json()
+
+        result = data.get("data", {})
+        jobs = result.get("jobs", [])
+        cursor = result.get("cursor")
+
+        if not jobs:
+            break
+        all_jobs.extend(jobs)
+        if not cursor:
+            break
+
+    return all_jobs
 
 
 # ---------- STEP 2: insert raw rows (pending) ----------
@@ -203,9 +236,9 @@ def print_job_summary(jobs: list[dict]) -> None:
 
 if __name__ == "__main__":
     ROLE = "data scientist intern"
-    LOCATION = "Singapore"
+    COUNTRY = "Singapore"
 
-    jobs = search_jobs(role=ROLE, location=LOCATION, num_pages=2)
+    jobs = search_jobs(role=ROLE, country=COUNTRY, num_pages=2)
     print(f"Found {len(jobs)} postings")
 
     conn = psycopg2.connect(DATABASE_URL)
