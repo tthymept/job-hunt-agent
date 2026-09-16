@@ -66,6 +66,7 @@ def search_jobs(role: str, country: str, city: str | None = None, num_pages: int
             "query": query,
             "date_posted": date_posted,
             "country": country_code,
+            "employment_types": "INTERN",
         }
         if cursor:
             params["cursor"] = cursor
@@ -84,7 +85,14 @@ def search_jobs(role: str, country: str, city: str | None = None, num_pages: int
         if not cursor:
             break
 
-    return all_jobs
+    internship_jobs = [j for j in all_jobs if is_internship(j)]
+    print(f"Filtered {len(all_jobs)} -> {len(internship_jobs)} internships")
+    return internship_jobs
+
+
+def is_internship(job: dict) -> bool:
+    text = f"{job.get('job_title', '')} {job.get('job_employment_type', '')}".lower()
+    return "intern" in text
 
 
 # ---------- STEP 2: insert raw rows (pending) ----------
