@@ -5,6 +5,7 @@ Manage job_interests (saved searches) and run the daily fetch cycle:
 distinct active (role, location) pairs -> search_jobs -> insert_jobs -> enrich once.
 """
 
+import time
 import psycopg2
 from search_agent import search_jobs, insert_jobs, enrich_pending_jobs
 
@@ -54,10 +55,22 @@ def get_distinct_active_pairs(conn) -> list[tuple[str, str]]:
 
 
 def backfill_new_pair(role: str, location: str, conn) -> None:
-    """One-time last-month pull for a pair nobody has fetched before."""
     print(f"Backfilling: {role} in {location}")
-    jobs = search_jobs(role=role, location=location, num_pages=5, date_posted="month")
-    insert_jobs(jobs, conn)
+    start = time.time()
+    num_pages = 5
+    date_posted = "month"
+
+    try:
+        jobs = search_jobs(role=role, location=location, num_pages=num_pages, date_posted=date_posted)
+        new_count = insert_jobs(jobs, conn)
+        log_fetch(conn, "backfill", role, location, num_pages, date_posted,
+                   num_jobs_found=len(jobs), num_jobs_new=new_count,
+                   duration_seconds=round(time.time() - start, 2))
+    except Exception as e:
+        log_fetch(conn, "backfill", role, location, num_pages, date_posted,
+                   status="failed", error_message=str(e),
+                   duration_seconds=round(time.time() - start, 2))
+        raise  # still surface the error, don't swallow it
 
     cur = conn.cursor()
     cur.execute("""
@@ -69,14 +82,22 @@ def backfill_new_pair(role: str, location: str, conn) -> None:
 
 
 def run_daily_fetch(conn) -> None:
-    """Run once a day: fetch today's postings for every distinct active pair,
-    then enrich everything pending in ONE pass (max batching, min Gemini calls)."""
     pairs = get_distinct_active_pairs(conn)
     print(f"Fetching daily jobs for {len(pairs)} distinct interest pair(s)")
 
     for role, location in pairs:
-        jobs = search_jobs(role=role, location=location, num_pages=1, date_posted="today")
-        insert_jobs(jobs, conn)
+        start = time.time()
+        try:
+            jobs = search_jobs(role=role, location=location, num_pages=1, date_posted="today")
+            new_count = insert_jobs(jobs, conn)
+            log_fetch(conn, "daily_search", role, location, num_pages=1, date_posted="today",
+                       num_jobs_found=len(jobs), num_jobs_new=new_count,
+                       duration_seconds=round(time.time() - start, 2))
+        except Exception as e:
+            log_fetch(conn, "daily_search", role, location, num_pages=1, date_posted="today",
+                       status="failed", error_message=str(e),
+                       duration_seconds=round(time.time() - start, 2))
+            continue  # don't let one pair's failure kill the whole run
 
         cur = conn.cursor()
         cur.execute("""
@@ -86,7 +107,36 @@ def run_daily_fetch(conn) -> None:
         conn.commit()
         cur.close()
 
-    enrich_pending_jobs(conn)  # one batched pass across all newly inserted jobs
+    # enrichment: count Gemini calls made, log once for the whole run
+    cur = conn.cursor()
+    cur.execute("SELECT COUNT(*) FROM jobs WHERE enrichment_status IN ('pending', 'failed') AND enrichment_attempts < 5")
+    pending_count = cur.fetchone()[0]
+    cur.close()
+
+    expected_calls = -(-pending_count // 10)  # matches your BATCH_SIZE=10 ceiling division
+    start = time.time()
+    enrich_pending_jobs(conn)
+    log_fetch(conn, "enrichment", num_jobs_found=pending_count,
+               num_gemini_calls=expected_calls,
+               duration_seconds=round(time.time() - start, 2))
+
+
+def log_fetch(conn, run_type, role=None, location=None, num_pages=None,
+              date_posted=None, num_jobs_found=None, num_jobs_new=None,
+              num_gemini_calls=None, status="success", error_message=None,
+              duration_seconds=None):
+    cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO fetch_logs (
+            run_type, role, location, num_pages, date_posted,
+            num_jobs_found, num_jobs_new, num_gemini_calls,
+            status, error_message, duration_seconds
+        ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+    """, (run_type, role, location, num_pages, date_posted,
+          num_jobs_found, num_jobs_new, num_gemini_calls,
+          status, error_message, duration_seconds))
+    conn.commit()
+    cur.close()
 
 
 if __name__ == "__main__":

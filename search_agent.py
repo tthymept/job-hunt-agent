@@ -56,8 +56,9 @@ def search_jobs(role: str, location: str, num_pages: int = 1, remote_only: bool 
 
 # ---------- STEP 2: insert raw rows (pending) ----------
 
-def insert_jobs(jobs: list[dict], conn) -> None:
+def insert_jobs(jobs: list[dict], conn) -> int:
     cur = conn.cursor()
+    new_count = 0
     for job in jobs:
         cur.execute("""
             INSERT INTO jobs (
@@ -76,8 +77,11 @@ def insert_jobs(jobs: list[dict], conn) -> None:
             job.get("job_posted_at_datetime_utc"), job.get("job_offer_expiration_datetime_utc"),
             job.get("job_normalized_title"),
         ))
+        if cur.rowcount > 0:
+            new_count += 1
     conn.commit()
     cur.close()
+    return new_count
 
 
 # ---------- STEP 3: extract missing info via LLM (batched -- N jobs per call) ----------
