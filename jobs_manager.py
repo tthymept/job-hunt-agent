@@ -50,6 +50,10 @@ def add_interest(user_id: int, role: str, country: str, city: str | None, conn) 
 
 
 def remove_interest(user_id: int, role: str, country: str, city: str | None, conn) -> None:
+    role = role.strip().lower() if role else role
+    country = country.strip().lower() if country else country
+    city = city.strip().lower() if city else None
+
     cur = conn.cursor()
     cur.execute("""
         UPDATE job_interests SET status = 'removed'
@@ -68,6 +72,10 @@ def get_distinct_active_pairs(conn) -> list[tuple[str, str, str | None]]:
 
 
 def backfill_new_pair(role: str, country: str, city: str | None, conn) -> None:
+    role = role.strip().lower() if role else role
+    country = country.strip().lower() if country else country
+    city = city.strip().lower() if city else None
+
     print(f"Backfilling: {role} in {city + ', ' if city else ''}{country}")
     start = time.time()
     num_pages = 5
@@ -92,6 +100,8 @@ def backfill_new_pair(role: str, country: str, city: str | None, conn) -> None:
     """, (role, country, city))
     conn.commit()
     cur.close()
+
+    enrich_pending_jobs(conn)
 
 
 def run_daily_fetch(conn) -> None:
@@ -155,13 +165,14 @@ if __name__ == "__main__":
     import os
     DATABASE_URL = os.environ["DATABASE_URL"]
     conn = psycopg2.connect(DATABASE_URL)
-    ROLE = "data science intern"
+    ROLE = "Data Engineer intern"# OR "Machine Learning Engineer intern" OR "AI Infrastructure intern" OR "Data Engineer intern")'
+    #ROLE = "data science intern"
     COUNTRY = "Singapore"
-    CITY = "" # Singapore = None
+    CITY = None # Singapore = None
 
-    result = add_interest(user_id=1, role=ROLE, country=COUNTRY, city=None, conn=conn)
+    result = add_interest(user_id=1, role=ROLE, country=COUNTRY, city=CITY, conn=conn)
     if result["pair_is_new"]:
-        backfill_new_pair(ROLE, COUNTRY, None, conn)
+        backfill_new_pair(ROLE, COUNTRY, CITY, conn)
 
     #run_daily_fetch(conn)
 
