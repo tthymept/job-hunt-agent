@@ -1,5 +1,5 @@
 """
-interest_manager.py
+jobs_manager.py
 ------------------
 Manage job_interests (saved searches) and run the daily fetch cycle:
 distinct active (role, location) pairs -> search_jobs -> insert_jobs -> enrich once.
@@ -13,22 +13,36 @@ from search_agent import search_jobs, insert_jobs, enrich_pending_jobs
 def add_interest(user_id: int, role: str, country: str, city: str | None, conn) -> dict:
     """Declare a new interest. Re-activates it if it was previously removed/paused.
     Returns {'pair_is_new': bool} so caller knows whether to trigger backfill."""
+    
+    # Clean inputs in Python
+    role_clean = role.strip().lower() if role else role
+    country_clean = country.strip().lower() if country else country
+    city_clean = city.strip().lower() if city else None
+
     cur = conn.cursor()
 
+    # Check if pair was already backfilled
     cur.execute("""
         SELECT 1 FROM job_interests
-        WHERE role = %s AND country = %s AND city IS NOT DISTINCT FROM %s AND backfilled = TRUE
+        WHERE user_id = %s 
+          AND role = %s 
+          AND country = %s 
+          AND city IS NOT DISTINCT FROM %s 
+          AND backfilled = TRUE
         LIMIT 1
-    """, (role, country, city))
+    """, (user_id, role_clean, country_clean, city_clean))
+    
     pair_already_backfilled = cur.fetchone() is not None
 
+    # Upsert relying on the named UNIQUE constraint
     cur.execute("""
         INSERT INTO job_interests (user_id, role, country, city, status, backfilled)
         VALUES (%s, %s, %s, %s, 'active', %s)
         ON CONFLICT (user_id, role, country, city)
         DO UPDATE SET status = 'active'
         RETURNING interest_id
-    """, (user_id, role, country, city, pair_already_backfilled))
+    """, (user_id, role_clean, country_clean, city_clean, pair_already_backfilled))
+    
     conn.commit()
     cur.close()
 
@@ -47,7 +61,7 @@ def remove_interest(user_id: int, role: str, country: str, city: str | None, con
 
 def get_distinct_active_pairs(conn) -> list[tuple[str, str, str | None]]:
     cur = conn.cursor()
-    cur.execute("SELECT DISTINCT role, country, city FROM job_interests WHERE status = 'active'")
+    cur.execute("SELECT DISTINCT role, country, city FROM job_interests WHERE status = 'active'") #'active', 'paused', 'removed'
     pairs = cur.fetchall()
     cur.close()
     return pairs
@@ -141,11 +155,14 @@ if __name__ == "__main__":
     import os
     DATABASE_URL = os.environ["DATABASE_URL"]
     conn = psycopg2.connect(DATABASE_URL)
+    ROLE = "data science intern"
+    COUNTRY = "Singapore"
+    CITY = "" # Singapore = None
 
-    result = add_interest(user_id=1, role="data scientist intern", country="Singapore", city=None, conn=conn)
+    result = add_interest(user_id=1, role=ROLE, country=COUNTRY, city=None, conn=conn)
     if result["pair_is_new"]:
-        backfill_new_pair("data scientist intern", "Singapore", None, conn)
+        backfill_new_pair(ROLE, COUNTRY, None, conn)
 
-    run_daily_fetch(conn)
+    #run_daily_fetch(conn)
 
     conn.close()

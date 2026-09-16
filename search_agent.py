@@ -56,7 +56,7 @@ def search_jobs(role: str, country: str, city: str | None = None, num_pages: int
                  date_posted: str = "today") -> list[dict]:
     country_code = get_country_code(country)
     location_text = build_location_text(country, city)
-    query = f"{role} in {location_text}"
+    query = f"{role} {city}"
 
     all_jobs = []
     cursor = None
@@ -66,7 +66,7 @@ def search_jobs(role: str, country: str, city: str | None = None, num_pages: int
             "query": query,
             "date_posted": date_posted,
             "country": country_code,
-            "employment_types": "INTERN",
+            #"employment_types": "INTERN",
         }
         if cursor:
             params["cursor"] = cursor
