@@ -31,18 +31,19 @@ HEADERS = {
 
 gemini_client = genai.Client(api_key=GEMINI_API_KEY)
 
-BATCH_SIZE = 5  # jobs per Gemini call -- tune down if descriptions are long / hitting token limits
+BATCH_SIZE = 10  # jobs per Gemini call -- tune down if descriptions are long / hitting token limits
 
 
 # ---------- STEP 1: search ----------
 
-def search_jobs(role: str, location: str, num_pages: int = 1, remote_only: bool = False) -> list[dict]:
+def search_jobs(role: str, location: str, num_pages: int = 1, remote_only: bool = False,
+                 date_posted: str = "week") -> list[dict]:
     query = f"{role} in {location}"
     params = {
         "query": query,
         "page": "1",
         "num_pages": str(num_pages),
-        "date_posted": "week", # month, week, today
+        "date_posted": date_posted,
     }
     if remote_only:
         params["remote_jobs_only"] = "true"

@@ -23,7 +23,7 @@ load_dotenv()
 client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
 
 EMBED_MODEL = "gemini-embedding-001"
-GEN_MODEL = "gemini-3.6-flash"
+GEN_MODEL = "gemini-3.5-flash-lite" #"gemini-3.6-flash"
 
 CV_STRUCTURED_PATH = "cv_structured.json"
 JOB_DESCRIPTION_PATH = "job_description.txt"
