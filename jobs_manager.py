@@ -2,11 +2,14 @@
 jobs_manager.py
 ------------------
 Manage job_interests (saved searches) and run the daily fetch cycle:
-distinct active (role, location) pairs -> search_jobs -> insert_jobs -> enrich once.
+distinct active (role, location) pairs -> search_jobs -> insert_jobs -> enrich once
+-> cleanup_stale_jobs.
 """
 
 import time
+from datetime import datetime, timedelta, timezone
 import psycopg2
+from dateutil import parser as date_parser
 from search_agent import search_jobs, insert_jobs, enrich_pending_jobs
 
 
@@ -141,6 +144,68 @@ def run_daily_fetch(conn) -> None:
     log_fetch(conn, "enrichment", num_jobs_found=pending_count,
                num_gemini_calls=expected_calls,
                duration_seconds=round(time.time() - start, 2))
+
+    start = time.time()
+    removed_count = cleanup_stale_jobs(conn)
+    log_fetch(conn, "cleanup", num_jobs_found=removed_count,
+               duration_seconds=round(time.time() - start, 2))
+
+
+def cleanup_stale_jobs(conn) -> int:
+    """
+    Removes jobs that are stale by any of:
+      - job_offer_expiration_datetime_utc has already passed
+      - job_posted_at_datetime_utc is more than 3 months old
+      - application_deadline (free-text, LLM-extracted) was more than 1 week ago
+
+    The first two live in proper TIMESTAMP columns, so they're deleted directly in SQL.
+    application_deadline is unstructured text from Gemini (no enforced format), so it's
+    parsed in Python with dateutil instead of risking a SQL ::date cast crashing on a
+    row like "rolling basis" or "ASAP". Unparsable strings are left alone, not guessed at.
+
+    Returns total number of jobs removed.
+    """
+    cur = conn.cursor()
+
+    # Conditions 1 & 2: safe to do directly in SQL, proper timestamp columns
+    cur.execute("""
+        DELETE FROM jobs
+        WHERE job_offer_expiration_datetime_utc < NOW()
+           OR job_posted_at_datetime_utc < NOW() - INTERVAL '3 months'
+        RETURNING job_id
+    """)
+    removed_by_sql = cur.fetchall()
+    conn.commit()
+
+    # Condition 3: application_deadline is free text -- parse defensively in Python
+    cur.execute("""
+        SELECT job_id, application_deadline FROM jobs
+        WHERE application_deadline IS NOT NULL
+    """)
+    rows = cur.fetchall()
+
+    cutoff = datetime.now(timezone.utc) - timedelta(weeks=1)
+    stale_ids = []
+    for job_id, deadline_str in rows:
+        try:
+            parsed = date_parser.parse(deadline_str, fuzzy=True)
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=timezone.utc)
+            if parsed < cutoff:
+                stale_ids.append(job_id)
+        except (ValueError, TypeError, OverflowError):
+            continue  # couldn't parse this one -- leave it rather than guess
+
+    if stale_ids:
+        cur.execute("DELETE FROM jobs WHERE job_id = ANY(%s)", (stale_ids,))
+        conn.commit()
+
+    cur.close()
+
+    total_removed = len(removed_by_sql) + len(stale_ids)
+    print(f"Cleanup: removed {total_removed} stale job(s) "
+          f"({len(removed_by_sql)} by expiration/age, {len(stale_ids)} by deadline)")
+    return total_removed
 
 
 def log_fetch(conn, run_type, role=None, country=None, city=None, num_pages=None,
