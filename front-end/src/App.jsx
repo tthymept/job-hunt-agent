@@ -1,10 +1,10 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Sidebar from './components/Sidebar'
 import Dashboard from './components/Dashboard'
 import Explore from './components/Explore'
 import CVPage from './components/CVPage'
 import Drawer from './components/Drawer'
-import { initialJobs, initialExploreJobs } from './data'
+import { initialJobs } from './data'
 
 // This is the ONLY place job data lives now. Every component below
 // just receives it as props and calls a function to change it -
@@ -12,7 +12,15 @@ import { initialJobs, initialExploreJobs } from './data'
 export default function App() {
   const [view, setView] = useState('dashboard')
   const [jobs, setJobs] = useState(initialJobs)
-  const [exploreJobs, setExploreJobs] = useState(initialExploreJobs)
+  const [exploreJobs, setExploreJobs] = useState([])
+
+useEffect(() => {
+  fetch('http://localhost:8000/api/explore-jobs')
+    .then(res => res.json())
+    .then(data => setExploreJobs(data))
+    .catch(err => console.error('Failed to load jobs:', err))
+}, [])
+
   const [drawerJob, setDrawerJob] = useState(null)
 
   // Replaces the old changeStatus(sel) that mutated jobs[i] directly

@@ -61,7 +61,7 @@ export default function Explore({ jobs, onAdd }) {
               <tr key={j.num}>
                 <td>{j.num}</td><td>{j.co}</td><td className="job-title">{j.title}</td><td>{j.loc}</td>
                 <td>{j.dur}</td><td>{j.min}</td><td>{j.dl}</td>
-                <td><a className="applink" href="#" onClick={e => e.preventDefault()}>Open ↗</a></td>
+                <td><a className="applink" href={j.applyLink} target="_blank" rel="noreferrer">Open ↗</a></td>
                 <td><span className="badge">{j.src}</span></td>
                 <td>
                   {j.added ? (
