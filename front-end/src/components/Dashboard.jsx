@@ -1,19 +1,30 @@
+import { useRef } from 'react'
 import { STATUS, ST_CLASS } from '../data'
 import Calendar from './Calendar'
 
-function FileLink({ name }) {
-  if (!name) return <span style={{ color: 'var(--muted)', fontSize: '12.5px' }}>No file</span>
-  return <a className="filelink" href="#" onClick={e => e.preventDefault()}>📎 {name}</a>
+function UploadCell({ job, onUploadCv }) {
+  const inputRef = useRef(null)
+  if (job.myUploadUrl) {
+    return <a className="filelink" href={job.myUploadUrl} target="_blank" rel="noreferrer">📎 View upload</a>
+  }
+  return (
+    <>
+      <button className="btn sm" onClick={() => inputRef.current.click()}>⬆ Upload</button>
+      <input
+        ref={inputRef}
+        type="file"
+        style={{ display: 'none' }}
+        accept=".pdf,.docx"
+        onChange={e => {
+          const file = e.target.files[0]
+          if (file) onUploadCv(job.trackingId, file)
+        }}
+      />
+    </>
+  )
 }
 
-// Old version: renderJobs() rebuilt the ENTIRE <tbody> as an HTML
-// string every time anything changed, and changeStatus(sel) mutated
-// jobs[i].status directly then manually fixed up one <select>'s
-// className. Here, the table is just "jobs.map(...) -> <tr>"; when
-// App's `jobs` state changes, React figures out only the one <select>
-// and its pill color actually changed and updates just that - you
-// never touch the DOM yourself.
-export default function Dashboard({ jobs, onStatusChange, onOpenDrawer }) {
+export default function Dashboard({ jobs, onStatusChange, onOpenDrawer, onUploadCv }) {
   return (
     <section>
       <div className="pagehead">
@@ -45,17 +56,17 @@ export default function Dashboard({ jobs, onStatusChange, onOpenDrawer }) {
           <thead>
             <tr>
               <th>Status</th><th>Company</th><th>Job Title</th><th>Location</th><th>Duration</th>
-              <th>Min. Duration</th><th>Deadline</th><th>Apply Link</th><th>Agent CV</th><th>My Upload</th><th></th>
+              <th>Min. Duration</th><th>Deadline</th><th>Apply Link</th><th>My Upload</th><th></th>
             </tr>
           </thead>
           <tbody>
-            {jobs.map((j, i) => (
-              <tr key={j.co + j.title}>
+            {jobs.map(j => (
+              <tr key={j.trackingId}>
                 <td>
                   <select
                     className={`pill st-${ST_CLASS[j.status]}`}
                     value={j.status}
-                    onChange={e => onStatusChange(i, e.target.value)}
+                    onChange={e => onStatusChange(j.trackingId, e.target.value)}
                   >
                     {STATUS.map(s => <option key={s}>{s}</option>)}
                   </select>
@@ -66,9 +77,8 @@ export default function Dashboard({ jobs, onStatusChange, onOpenDrawer }) {
                 <td>{j.dur}</td>
                 <td>{j.min}</td>
                 <td>{j.dl}</td>
-                <td><a className="applink" href="#" onClick={e => e.preventDefault()}>Open ↗</a></td>
-                <td className="cvcell"><FileLink name={j.agent} /><span className="ai">AI-tailored</span></td>
-                <td className="cvcell"><FileLink name={j.upload} /></td>
+                <td><a className="applink" href={j.applyLink} target="_blank" rel="noreferrer">Open ↗</a></td>
+                <td className="cvcell"><UploadCell job={j} onUploadCv={onUploadCv} /></td>
                 <td><button className="chev" onClick={() => onOpenDrawer(j)}>›</button></td>
               </tr>
             ))}

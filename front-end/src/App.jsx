@@ -4,20 +4,34 @@ import Dashboard from './components/Dashboard'
 import Explore from './components/Explore'
 import CVPage from './components/CVPage'
 import Drawer from './components/Drawer'
-import { initialJobs } from './data'
 
 const EXPLORE_PAGE_SIZE = 20
+const API = 'http://localhost:8000'
 
 export default function App() {
   const [view, setView] = useState('dashboard')
-  const [jobs, setJobs] = useState(initialJobs)
+  const [jobs, setJobs] = useState([])
   const [drawerJob, setDrawerJob] = useState(null)
+  const [generatingId, setGeneratingId] = useState(null)
 
   const [exploreJobs, setExploreJobs] = useState([])
   const [explorePage, setExplorePage] = useState(1)
   const [exploreTotal, setExploreTotal] = useState(0)
   const [exploreSort, setExploreSort] = useState('relevance')
   const [exploreFilters, setExploreFilters] = useState({ role: '', location: 'all', postedDate: 'all' })
+
+  function loadTracker() {
+    fetch(`${API}/api/tracker`)
+      .then(res => res.json())
+      .then(setJobs)
+      .catch(err => console.error('Failed to load tracker:', err))
+  }
+
+  // Refetches whenever Dashboard becomes the active tab - simplest way
+  // to show jobs added from Explore without more complex cross-page sync.
+  useEffect(() => {
+    if (view === 'dashboard') loadTracker()
+  }, [view])
 
   useEffect(() => {
     const params = new URLSearchParams({
@@ -28,7 +42,7 @@ export default function App() {
       location: exploreFilters.location,
       posted_date: exploreFilters.postedDate,
     })
-    fetch(`http://localhost:8000/api/explore-jobs?${params}`)
+    fetch(`${API}/api/explore-jobs?${params}`)
       .then(res => res.json())
       .then(data => {
         setExploreJobs(data.jobs)
@@ -37,12 +51,23 @@ export default function App() {
       .catch(err => console.error('Failed to load jobs:', err))
   }, [explorePage, exploreSort, exploreFilters])
 
-  function handleStatusChange(index, status) {
-    setJobs(prev => prev.map((j, i) => (i === index ? { ...j, status } : j)))
+  function handleStatusChange(trackingId, status) {
+    setJobs(prev => prev.map(j => (j.trackingId === trackingId ? { ...j, status } : j)))
+    fetch(`${API}/api/tracker/${trackingId}/status`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status }),
+    }).catch(err => console.error('Failed to update status:', err))
   }
 
   function handleAddToMyJobs(index) {
+    const job = exploreJobs[index]
     setExploreJobs(prev => prev.map((j, i) => (i === index ? { ...j, added: true } : j)))
+    fetch(`${API}/api/tracker`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ job_id: job.jobId }),
+    }).catch(err => console.error('Failed to add job:', err))
   }
 
   function handleSortChange(newSort) {
@@ -55,13 +80,38 @@ export default function App() {
     setExplorePage(1)
   }
 
+  function handleGenerateBullets(trackingId) {
+    setGeneratingId(trackingId)
+    fetch(`${API}/api/tracker/${trackingId}/generate-bullets`, { method: 'POST' })
+      .then(res => res.json())
+      .then(data => {
+        setJobs(prev => prev.map(j => (j.trackingId === trackingId ? { ...j, bullets: data.bullets } : j)))
+        setDrawerJob(prev => (prev && prev.trackingId === trackingId ? { ...prev, bullets: data.bullets } : prev))
+      })
+      .catch(err => console.error('Failed to generate bullets:', err))
+      .finally(() => setGeneratingId(null))
+  }
+
+  function handleUploadCv(trackingId, file) {
+    const formData = new FormData()
+    formData.append('file', file)
+    fetch(`${API}/api/tracker/${trackingId}/upload`, { method: 'POST', body: formData })
+      .then(() => loadTracker())
+      .catch(err => console.error('Failed to upload CV:', err))
+  }
+
   return (
     <div className={`app${drawerJob ? ' drawer-open' : ''}`}>
       <Sidebar view={view} setView={setView} />
 
       <main className="main">
         {view === 'dashboard' && (
-          <Dashboard jobs={jobs} onStatusChange={handleStatusChange} onOpenDrawer={setDrawerJob} />
+          <Dashboard
+            jobs={jobs}
+            onStatusChange={handleStatusChange}
+            onOpenDrawer={setDrawerJob}
+            onUploadCv={handleUploadCv}
+          />
         )}
         {view === 'explore' && (
           <Explore
@@ -81,7 +131,12 @@ export default function App() {
       </main>
 
       <div className="overlay" onClick={() => setDrawerJob(null)} />
-      <Drawer job={drawerJob} onClose={() => setDrawerJob(null)} />
+      <Drawer
+        job={drawerJob}
+        onClose={() => setDrawerJob(null)}
+        onGenerate={handleGenerateBullets}
+        generating={drawerJob && generatingId === drawerJob.trackingId}
+      />
     </div>
   )
 }
