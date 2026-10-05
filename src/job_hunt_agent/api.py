@@ -66,13 +66,14 @@ def get_current_user_id() -> int:
 
 # ---------- Explore Jobs ----------
 
-def reshape_job(raw: dict, index: int) -> dict:
+def reshape_job(raw: dict, index: int, tracked_ids: set) -> dict:
     core = job_core_fields(raw)
+    job_id = raw.get("job_id")
     return {
         "num": f"J-{1000 + index}",
-        "jobId": raw.get("job_id"),
+        "jobId": job_id,
         "src": raw.get("job_publisher") or "—",
-        "added": False,
+        "added": job_id in tracked_ids,
         **core,
     }
 
@@ -118,6 +119,10 @@ def get_explore_jobs(
     location: str = "",
     posted_date: str = "all",
 ):
+    uid = get_current_user_id()
+    tracked_response = supabase.table("user_job_tracking").select("job_id").eq("user_id", uid).execute()
+    tracked_ids = {row["job_id"] for row in (tracked_response.data or [])}
+
     response = supabase.table("jobs").select("*").execute()
     rows = response.data or []
 
@@ -137,7 +142,7 @@ def get_explore_jobs(
     total = len(rows)
     start = (page - 1) * page_size
     page_rows = rows[start:start + page_size]
-    jobs = [reshape_job(row, start + i) for i, row in enumerate(page_rows)]
+    jobs = [reshape_job(row, start + i, tracked_ids) for i, row in enumerate(page_rows)]
     return {"jobs": jobs, "total": total, "page": page, "page_size": page_size}
 
 

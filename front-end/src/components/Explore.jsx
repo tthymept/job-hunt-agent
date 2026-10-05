@@ -95,17 +95,13 @@ export default function Explore({ jobs, onAdd, page, pageSize, total, onPageChan
         <table>
           <thead>
             <tr>
-              <th>Job #</th><th>Company</th><th>Job Title</th><th>Location</th><th>Duration</th>
-              <th>Min. Duration</th><th>Deadline</th><th>Apply</th><th>Source</th><th></th>
+              <th></th><th>Company</th><th>Job Title</th><th>Location</th><th>Duration</th>
+              <th>Min. Duration</th><th>Deadline</th><th>Apply</th><th>Source</th>
             </tr>
           </thead>
           <tbody>
             {jobs.map((j, i) => (
-              <tr key={j.num}>
-                <td>{j.num}</td><td>{j.co}</td><td className="job-title">{j.title}</td><td>{j.loc}</td>
-                <td>{j.dur}</td><td>{j.min}</td><td>{j.dl}</td>
-                <td><a className="applink" href={j.applyLink} target="_blank" rel="noreferrer">Open ↗</a></td>
-                <td><span className="badge">{j.src}</span></td>
+              <tr key={j.jobId}>
                 <td>
                   {j.added ? (
                     <button className="addbtn added" disabled>✓ Added</button>
@@ -113,6 +109,10 @@ export default function Explore({ jobs, onAdd, page, pageSize, total, onPageChan
                     <button className="addbtn" onClick={() => onAdd(i)}>+ Add to My Jobs</button>
                   )}
                 </td>
+                <td>{j.co}</td><td className="job-title">{j.title}</td><td>{j.loc}</td>
+                <td>{j.dur}</td><td>{j.min}</td><td>{j.dl}</td>
+                <td><a className="applink" href={j.applyLink} target="_blank" rel="noreferrer">Open ↗</a></td>
+                <td><span className="badge">{j.src}</span></td>
               </tr>
             ))}
           </tbody>
