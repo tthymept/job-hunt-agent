@@ -6,32 +6,33 @@ import CVPage from './components/CVPage'
 import Drawer from './components/Drawer'
 import { initialJobs } from './data'
 
-// This is the ONLY place job data lives now. Every component below
-// just receives it as props and calls a function to change it -
-// nobody pokes the DOM directly anymore.
+const EXPLORE_PAGE_SIZE = 20
+
 export default function App() {
   const [view, setView] = useState('dashboard')
   const [jobs, setJobs] = useState(initialJobs)
-  const [exploreJobs, setExploreJobs] = useState([])
-
-useEffect(() => {
-  fetch('http://localhost:8000/api/explore-jobs')
-    .then(res => res.json())
-    .then(data => setExploreJobs(data))
-    .catch(err => console.error('Failed to load jobs:', err))
-}, [])
-
   const [drawerJob, setDrawerJob] = useState(null)
 
-  // Replaces the old changeStatus(sel) that mutated jobs[i] directly
-  // and manually swapped the <select>'s className. Here we just
-  // describe the new state; React re-renders the pill automatically.
+  const [exploreJobs, setExploreJobs] = useState([])
+  const [explorePage, setExplorePage] = useState(1)
+  const [exploreTotal, setExploreTotal] = useState(0)
+
+  // Refetches whenever explorePage changes - clicking a page number
+  // just updates this one piece of state, and this effect does the rest.
+  useEffect(() => {
+    fetch(`http://localhost:8000/api/explore-jobs?page=${explorePage}&page_size=${EXPLORE_PAGE_SIZE}`)
+      .then(res => res.json())
+      .then(data => {
+        setExploreJobs(data.jobs)
+        setExploreTotal(data.total)
+      })
+      .catch(err => console.error('Failed to load jobs:', err))
+  }, [explorePage])
+
   function handleStatusChange(index, status) {
     setJobs(prev => prev.map((j, i) => (i === index ? { ...j, status } : j)))
   }
 
-  // Replaces the old addJob(i, btn) that mutated the array AND
-  // manually replaced the button's outerHTML.
   function handleAddToMyJobs(index) {
     setExploreJobs(prev => prev.map((j, i) => (i === index ? { ...j, added: true } : j)))
   }
@@ -42,14 +43,17 @@ useEffect(() => {
 
       <main className="main">
         {view === 'dashboard' && (
-          <Dashboard
-            jobs={jobs}
-            onStatusChange={handleStatusChange}
-            onOpenDrawer={setDrawerJob}
-          />
+          <Dashboard jobs={jobs} onStatusChange={handleStatusChange} onOpenDrawer={setDrawerJob} />
         )}
         {view === 'explore' && (
-          <Explore jobs={exploreJobs} onAdd={handleAddToMyJobs} />
+          <Explore
+            jobs={exploreJobs}
+            onAdd={handleAddToMyJobs}
+            page={explorePage}
+            pageSize={EXPLORE_PAGE_SIZE}
+            total={exploreTotal}
+            onPageChange={setExplorePage}
+          />
         )}
         {view === 'cv' && <CVPage />}
       </main>

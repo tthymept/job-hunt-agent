@@ -47,8 +47,21 @@ def reshape_job(raw: dict, index: int) -> dict:
     }
 
 @app.get("/api/explore-jobs")
-def get_explore_jobs():
-    response = supabase.table("jobs").select("*").limit(50).execute()
-    if not response.data:
-        raise HTTPException(status_code=404, detail="No jobs found in the jobs table")
-    return [reshape_job(row, i) for i, row in enumerate(response.data)]
+def get_explore_jobs(page: int = 1, page_size: int = 20):
+    start = (page - 1) * page_size
+    end = start + page_size - 1
+
+    response = (
+        supabase.table("jobs")
+        .select("*", count="exact")
+        .range(start, end)
+        .execute()
+    )
+
+    jobs = [reshape_job(row, start + i) for i, row in enumerate(response.data)]
+    return {
+        "jobs": jobs,
+        "total": response.count or 0,
+        "page": page,
+        "page_size": page_size,
+    }
