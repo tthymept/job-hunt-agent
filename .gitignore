@@ -12,3 +12,9 @@ wheels/
 cv.pdf
 cv.txt
 cv_structured.json
+
+# React/Vite frontend
+front-end/node_modules/
+front-end/dist/
+front-end/.vite/
+*.log
