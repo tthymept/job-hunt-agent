@@ -16,18 +16,26 @@ export default function App() {
   const [exploreJobs, setExploreJobs] = useState([])
   const [explorePage, setExplorePage] = useState(1)
   const [exploreTotal, setExploreTotal] = useState(0)
+  const [exploreSort, setExploreSort] = useState('relevance')
+  const [exploreFilters, setExploreFilters] = useState({ role: '', location: 'all', postedDate: 'all' })
 
-  // Refetches whenever explorePage changes - clicking a page number
-  // just updates this one piece of state, and this effect does the rest.
   useEffect(() => {
-    fetch(`http://localhost:8000/api/explore-jobs?page=${explorePage}&page_size=${EXPLORE_PAGE_SIZE}`)
+    const params = new URLSearchParams({
+      page: explorePage,
+      page_size: EXPLORE_PAGE_SIZE,
+      sort: exploreSort,
+      role: exploreFilters.role,
+      location: exploreFilters.location,
+      posted_date: exploreFilters.postedDate,
+    })
+    fetch(`http://localhost:8000/api/explore-jobs?${params}`)
       .then(res => res.json())
       .then(data => {
         setExploreJobs(data.jobs)
         setExploreTotal(data.total)
       })
       .catch(err => console.error('Failed to load jobs:', err))
-  }, [explorePage])
+  }, [explorePage, exploreSort, exploreFilters])
 
   function handleStatusChange(index, status) {
     setJobs(prev => prev.map((j, i) => (i === index ? { ...j, status } : j)))
@@ -35,6 +43,16 @@ export default function App() {
 
   function handleAddToMyJobs(index) {
     setExploreJobs(prev => prev.map((j, i) => (i === index ? { ...j, added: true } : j)))
+  }
+
+  function handleSortChange(newSort) {
+    setExploreSort(newSort)
+    setExplorePage(1)
+  }
+
+  function handleApplyFilters(newFilters) {
+    setExploreFilters(newFilters)
+    setExplorePage(1)
   }
 
   return (
@@ -53,6 +71,10 @@ export default function App() {
             pageSize={EXPLORE_PAGE_SIZE}
             total={exploreTotal}
             onPageChange={setExplorePage}
+            sort={exploreSort}
+            onSortChange={handleSortChange}
+            filters={exploreFilters}
+            onApplyFilters={handleApplyFilters}
           />
         )}
         {view === 'cv' && <CVPage />}

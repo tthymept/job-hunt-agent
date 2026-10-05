@@ -1,5 +1,5 @@
-// Builds a page-number list like [1, '…', 4, 5, 6, '…', 12] so we don't
-// render 200+ page buttons when there are many pages.
+import { useState } from 'react'
+
 function getPageNumbers(current, total) {
   if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1)
   const pages = [1]
@@ -10,10 +10,28 @@ function getPageNumbers(current, total) {
   return pages
 }
 
-export default function Explore({ jobs, onAdd, page, pageSize, total, onPageChange }) {
+const POSTED_DATE_OPTIONS = [
+  { value: 'today', label: 'Today' },
+  { value: '3days', label: '3 Days' },
+  { value: 'week', label: 'Week' },
+  { value: 'month', label: 'Month' },
+  { value: 'all', label: 'All' },
+]
+
+export default function Explore({ jobs, onAdd, page, pageSize, total, onPageChange, sort, onSortChange, filters, onApplyFilters }) {
   const totalPages = Math.max(1, Math.ceil(total / pageSize))
   const rangeStart = total === 0 ? 0 : (page - 1) * pageSize + 1
   const rangeEnd = Math.min(page * pageSize, total)
+
+  // Draft values - what the user is currently typing/selecting, separate
+  // from `filters`, which is what's actually been applied to the fetch.
+  const [draftRole, setDraftRole] = useState(filters.role)
+  const [draftLocation, setDraftLocation] = useState(filters.location)
+  const [draftPostedDate, setDraftPostedDate] = useState(filters.postedDate)
+
+  function handleSearch() {
+    onApplyFilters({ role: draftRole, location: draftLocation, postedDate: draftPostedDate })
+  }
 
   return (
     <section>
@@ -28,35 +46,48 @@ export default function Explore({ jobs, onAdd, page, pageSize, total, onPageChan
       <div className="card filterbar">
         <div className="f">
           <label>Role</label>
-          <input type="search" defaultValue="Data, analytics, engineering..." style={{ width: 220 }} />
+          <input
+            type="search"
+            placeholder="Data, analytics, engineering..."
+            value={draftRole}
+            onChange={e => setDraftRole(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && handleSearch()}
+            style={{ width: 220 }}
+          />
         </div>
         <div className="f">
           <label>Location</label>
-          <select>
-            <option>Singapore, Bangkok</option>
-            <option>Singapore</option>
-            <option>Bangkok</option>
+          <select value={draftLocation} onChange={e => setDraftLocation(e.target.value)}>
+            <option value="all">All locations</option>
+            <option value="singapore">Singapore</option>
+            <option value="bangkok">Bangkok</option>
           </select>
         </div>
         <div className="f">
           <label>Posted Date</label>
           <div className="seg">
-            <button>Today</button><button>3 Days</button>
-            <button className="active">Week</button>
-            <button>Month</button><button>All</button>
+            {POSTED_DATE_OPTIONS.map(opt => (
+              <button
+                key={opt.value}
+                className={draftPostedDate === opt.value ? 'active' : ''}
+                onClick={() => setDraftPostedDate(opt.value)}
+              >
+                {opt.label}
+              </button>
+            ))}
           </div>
         </div>
         <div className="f" style={{ justifyContent: 'flex-end' }}>
           <label>&nbsp;</label>
-          <button className="btn primary">🔍 Search</button>
+          <button className="btn primary" onClick={handleSearch}>🔍 Search</button>
         </div>
       </div>
 
       <div className="sectionhead">
         <h2>Recommended roles <span className="count">{total} jobs found</span></h2>
-        <select>
-          <option>Sort: Most relevant</option>
-          <option>Sort: Deadline soonest</option>
+        <select value={sort} onChange={e => onSortChange(e.target.value)}>
+          <option value="relevance">Sort: Most relevant</option>
+          <option value="deadline">Sort: Deadline soonest</option>
         </select>
       </div>
 
