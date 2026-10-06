@@ -66,14 +66,21 @@ def get_current_user_id() -> int:
 
 # ---------- Explore Jobs ----------
 
-def reshape_job(raw: dict, index: int, tracked_ids: set) -> dict:
+def reshape_job(raw: dict, index: int, tracked_status: dict) -> dict:
     core = job_core_fields(raw)
     job_id = raw.get("job_id")
+    status = tracked_status.get(job_id)
+    if status is None:
+        track_state = "none"
+    elif status == "Untracked":
+        track_state = "untracked"
+    else:
+        track_state = "added"
     return {
         "num": f"J-{1000 + index}",
         "jobId": job_id,
         "src": raw.get("job_publisher") or "—",
-        "added": job_id in tracked_ids,
+        "trackState": track_state,
         **core,
     }
 
@@ -120,8 +127,8 @@ def get_explore_jobs(
     posted_date: str = "all",
 ):
     uid = get_current_user_id()
-    tracked_response = supabase.table("user_job_tracking").select("job_id").eq("user_id", uid).execute()
-    tracked_ids = {row["job_id"] for row in (tracked_response.data or [])}
+    tracked_response = supabase.table("user_job_tracking").select("job_id, status").eq("user_id", uid).execute()
+    tracked_status = {row["job_id"]: row["status"] for row in (tracked_response.data or [])}
 
     response = supabase.table("jobs").select("*").execute()
     rows = response.data or []
@@ -142,7 +149,7 @@ def get_explore_jobs(
     total = len(rows)
     start = (page - 1) * page_size
     page_rows = rows[start:start + page_size]
-    jobs = [reshape_job(row, start + i, tracked_ids) for i, row in enumerate(page_rows)]
+    jobs = [reshape_job(row, start + i, tracked_status) for i, row in enumerate(page_rows)]
     return {"jobs": jobs, "total": total, "page": page, "page_size": page_size}
 
 
@@ -185,6 +192,7 @@ def get_tracker():
         supabase.table("user_job_tracking")
         .select("*, jobs(*)")
         .eq("user_id", uid)
+        .neq("status", "Untracked")
         .order("tracking_id")
         .execute()
     )
@@ -198,12 +206,19 @@ def add_to_tracker(body: AddTrackerBody):
     uid = get_current_user_id()
     existing = (
         supabase.table("user_job_tracking")
-        .select("tracking_id")
+        .select("tracking_id, status")
         .eq("user_id", uid)
         .eq("job_id", body.job_id)
         .execute()
     )
     if existing.data:
+        row = existing.data[0]
+        if row["status"] == "Untracked":
+            supabase.table("user_job_tracking").update({
+                "status": "Saved / Not Applied",
+                "status_updated_at": datetime.now(timezone.utc).isoformat(),
+            }).eq("tracking_id", row["tracking_id"]).execute()
+            return {"status": "retracked"}
         return {"status": "already_tracked"}
     supabase.table("user_job_tracking").insert({
         "user_id": uid,

@@ -52,7 +52,11 @@ export default function App() {
   }, [explorePage, exploreSort, exploreFilters])
 
   function handleStatusChange(trackingId, status) {
-    setJobs(prev => prev.map(j => (j.trackingId === trackingId ? { ...j, status } : j)))
+    if (status === 'Untracked') {
+      setJobs(prev => prev.filter(j => j.trackingId !== trackingId))
+    } else {
+      setJobs(prev => prev.map(j => (j.trackingId === trackingId ? { ...j, status } : j)))
+    }
     fetch(`${API}/api/tracker/${trackingId}/status`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -62,7 +66,7 @@ export default function App() {
 
   function handleAddToMyJobs(index) {
     const job = exploreJobs[index]
-    setExploreJobs(prev => prev.map((j, i) => (i === index ? { ...j, added: true } : j)))
+    setExploreJobs(prev => prev.map((j, i) => (i === index ? { ...j, trackState: 'added' } : j)))
     fetch(`${API}/api/tracker`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

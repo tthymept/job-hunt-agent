@@ -69,6 +69,7 @@ export default function Dashboard({ jobs, onStatusChange, onOpenDrawer, onUpload
                     onChange={e => onStatusChange(j.trackingId, e.target.value)}
                   >
                     {STATUS.map(s => <option key={s}>{s}</option>)}
+                    <option value="Untracked" style={{ color: 'crimson' }}>🗑 Untrack</option>
                   </select>
                 </td>
                 <td>{j.co}</td>

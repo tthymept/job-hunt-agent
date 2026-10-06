@@ -103,10 +103,18 @@ export default function Explore({ jobs, onAdd, page, pageSize, total, onPageChan
             {jobs.map((j, i) => (
               <tr key={j.jobId}>
                 <td>
-                  {j.added ? (
-                    <button className="addbtn added" disabled>✓ Added</button>
+                  {j.trackState === 'added' ? (
+                    <button className="addbtn added" disabled>
+                      <span className="icon">✓</span><span className="label">Added</span>
+                    </button>
+                  ) : j.trackState === 'untracked' ? (
+                    <button className="addbtn" onClick={() => onAdd(i)}>
+                      <span className="icon">↺</span><span className="label">Retrack</span>
+                    </button>
                   ) : (
-                    <button className="addbtn" onClick={() => onAdd(i)}>+ Add to My Jobs</button>
+                    <button className="addbtn" onClick={() => onAdd(i)}>
+                      <span className="icon">+</span><span className="label">Add to My Jobs</span>
+                    </button>
                   )}
                 </td>
                 <td>{j.co}</td><td className="job-title">{j.title}</td><td>{j.loc}</td>
