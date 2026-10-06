@@ -1,6 +1,7 @@
 # src/job_hunt_agent/api.py
 import os
 import json
+import uuid
 from datetime import datetime, timedelta, timezone
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, UploadFile, File
@@ -270,3 +271,73 @@ async def upload_my_cv(tracking_id: int, file: UploadFile = File(...)):
     supabase.storage.from_("resumes").upload(path, contents, {"content-type": file.content_type, "upsert": "true"})
     supabase.table("user_job_tracking").update({"my_upload_path": path}).eq("tracking_id", tracking_id).execute()
     return {"status": "uploaded", "path": path}
+
+def track_job_for_user(uid: int, job_id: str) -> str:
+    existing = (
+        supabase.table("user_job_tracking")
+        .select("tracking_id, status")
+        .eq("user_id", uid)
+        .eq("job_id", job_id)
+        .execute()
+    )
+    if existing.data:
+        row = existing.data[0]
+        if row["status"] == "Untracked":
+            supabase.table("user_job_tracking").update({
+                "status": "Saved / Not Applied",
+                "status_updated_at": datetime.now(timezone.utc).isoformat(),
+            }).eq("tracking_id", row["tracking_id"]).execute()
+            return "retracked"
+        return "already_tracked"
+    supabase.table("user_job_tracking").insert({
+        "user_id": uid,
+        "job_id": job_id,
+        "status": "Saved / Not Applied",
+    }).execute()
+    return "added"
+
+class AddTrackerBody(BaseModel):
+    job_id: str
+
+@app.post("/api/tracker")
+def add_to_tracker(body: AddTrackerBody):
+    uid = get_current_user_id()
+    status = track_job_for_user(uid, body.job_id)
+    return {"status": status}
+
+
+class ManualJobBody(BaseModel):
+    company: str
+    title: str
+    location: str | None = None
+    duration: str | None = None
+    min_duration_months: int | None = None
+    deadline: str | None = None
+    apply_link: str | None = None
+    skills: list[str] = []
+    description: str | None = None
+
+@app.post("/api/jobs/manual")
+def add_manual_job(body: ManualJobBody):
+    uid = get_current_user_id()
+    job_id = f"manual-{uuid.uuid4()}"
+
+    supabase.table("jobs").insert({
+        "job_id": job_id,
+        "employer_name": body.company,
+        "job_title": body.title,
+        "job_city": body.location,
+        "duration": body.duration,
+        "min_duration_months": body.min_duration_months,
+        "application_deadline": body.deadline,
+        "job_apply_link": body.apply_link,
+        "job_description": body.description,
+        "short_description": body.description,
+        "skills": body.skills,
+        "job_publisher": "Manual",
+        "enrichment_status": "done",
+        "job_posted_at_datetime_utc": datetime.now(timezone.utc).isoformat(),
+    }).execute()
+
+    track_job_for_user(uid, job_id)
+    return {"status": "added", "job_id": job_id}

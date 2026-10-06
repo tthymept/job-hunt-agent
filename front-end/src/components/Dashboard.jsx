@@ -24,7 +24,7 @@ function UploadCell({ job, onUploadCv }) {
   )
 }
 
-export default function Dashboard({ jobs, onStatusChange, onOpenDrawer, onUploadCv }) {
+export default function Dashboard({ jobs, onStatusChange, onOpenDrawer, onUploadCv, onOpenManualModal }) {
   return (
     <section>
       <div className="pagehead">
@@ -40,8 +40,7 @@ export default function Dashboard({ jobs, onStatusChange, onOpenDrawer, onUpload
 
       <div className="urlbar">
         <input type="text" placeholder="Paste job posting URL..." />
-        <button className="btn">⬇ Load Job</button>
-        <button className="btn primary">+ Add Job</button>
+        <button className="btn accent-outline">⬇ Load Job</button>
       </div>
 
       <div className="sectionhead">
@@ -49,6 +48,7 @@ export default function Dashboard({ jobs, onStatusChange, onOpenDrawer, onUpload
         <div className="actions">
           <button className="btn sm">☰ Filter</button>
           <button className="btn sm">▤ Columns</button>
+          <button className="btn sm primary" onClick={onOpenManualModal}>+ Add Job Manually</button>
         </div>
       </div>
       <div className="card tablewrap">

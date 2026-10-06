@@ -4,6 +4,7 @@ import Dashboard from './components/Dashboard'
 import Explore from './components/Explore'
 import CVPage from './components/CVPage'
 import Drawer from './components/Drawer'
+import ManualAddJobModal from './components/ManualAddJobModal'
 
 const EXPLORE_PAGE_SIZE = 20
 const API = 'http://localhost:8000'
@@ -13,6 +14,7 @@ export default function App() {
   const [jobs, setJobs] = useState([])
   const [drawerJob, setDrawerJob] = useState(null)
   const [generatingId, setGeneratingId] = useState(null)
+  const [showManualModal, setShowManualModal] = useState(false)
 
   const [exploreJobs, setExploreJobs] = useState([])
   const [explorePage, setExplorePage] = useState(1)
@@ -115,6 +117,7 @@ export default function App() {
             onStatusChange={handleStatusChange}
             onOpenDrawer={setDrawerJob}
             onUploadCv={handleUploadCv}
+            onOpenManualModal={() => setShowManualModal(true)}
           />
         )}
         {view === 'explore' && (
@@ -140,6 +143,15 @@ export default function App() {
         onClose={() => setDrawerJob(null)}
         onGenerate={handleGenerateBullets}
         generating={drawerJob && generatingId === drawerJob.trackingId}
+      />
+
+      <ManualAddJobModal
+        open={showManualModal}
+        onClose={() => setShowManualModal(false)}
+        onAdded={() => {
+          setShowManualModal(false)
+          loadTracker()
+        }}
       />
     </div>
   )

@@ -51,6 +51,8 @@ body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,system-ui
 .btn.primary:hover{filter:brightness(1.07);}
 .btn.sm{padding:5px 9px;font-size:12px;}
 .btn:disabled{opacity:.6;cursor:default;}
+.btn.accent-outline{background:var(--surface);border-color:var(--accent);color:var(--accent);}
+.btn.accent-outline:hover{background:var(--accent-weak);}
 .actions{display:flex;gap:8px;flex-wrap:wrap;}
 .urlbar{display:flex;gap:10px;margin-bottom:22px;}
 .urlbar input{flex:1;min-width:0;}
@@ -147,3 +149,13 @@ tbody tr:hover{background:var(--row-hover);}
   .main{padding:18px 16px 90px;}
   .drawer{width:100%;max-width:100%;}
 }
+.modal-overlay{position:fixed;inset:0;background:var(--drawer-shade);display:flex;align-items:center;justify-content:center;z-index:40;}
+.modal-box{background:var(--surface);border-radius:12px;padding:24px;width:480px;max-width:92vw;max-height:88vh;overflow-y:auto;}
+.modal-box h3{margin:0 0 4px;font-size:18px;}
+.modal-box .sub{color:var(--sub);font-size:12.5px;margin-bottom:18px;}
+.field-row{display:flex;flex-direction:column;gap:5px;margin-bottom:14px;}
+.field-row label{font-size:12.5px;font-weight:600;color:var(--sub);}
+.field-row input,.field-row textarea{width:100%;background:var(--surface);border:1px solid var(--border);border-radius:7px;padding:9px 11px;font-size:13px;color:var(--text);font-family:inherit;}
+.field-row textarea{resize:vertical;min-height:70px;}
+.field-grid{display:grid;grid-template-columns:1fr 1fr;gap:0 14px;}
+.modal-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:6px;}
