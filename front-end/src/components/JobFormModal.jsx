@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 
 const API = 'http://localhost:8000'
 
@@ -7,10 +7,34 @@ const EMPTY_FORM = {
   minDurationMonths: '', deadline: '', applyLink: '', skills: '', description: '',
 }
 
-export default function ManualAddJobModal({ open, onClose, onAdded }) {
+// Converts the backend's `edit` object into the form's state shape
+function toForm(edit) {
+  return {
+    company: edit.company || '',
+    title: edit.title || '',
+    location: edit.location || '',
+    duration: edit.duration || '',
+    minDurationMonths: edit.min_duration_months ?? '',
+    deadline: edit.deadline || '',
+    applyLink: edit.apply_link || '',
+    skills: (edit.skills || []).join(', '),
+    description: edit.description || '',
+  }
+}
+
+export default function JobFormModal({ open, mode, initial, trackingId, onClose, onSaved }) {
+  const isEdit = mode === 'edit'
   const [form, setForm] = useState(EMPTY_FORM)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState(null)
+
+  // Reset every time the modal opens: blank for Add, prefilled for Edit
+  useEffect(() => {
+    if (open) {
+      setForm(isEdit && initial ? toForm(initial) : EMPTY_FORM)
+      setError(null)
+    }
+  }, [open, isEdit, initial])
 
   if (!open) return null
 
@@ -26,15 +50,17 @@ export default function ManualAddJobModal({ open, onClose, onAdded }) {
     }
     setSubmitting(true)
     setError(null)
-    fetch(`${API}/api/jobs/manual`, {
-      method: 'POST',
+
+    const url = isEdit ? `${API}/api/tracker/${trackingId}/edit` : `${API}/api/jobs/manual`
+    fetch(url, {
+      method: isEdit ? 'PATCH' : 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         company: form.company,
         title: form.title,
         location: form.location || null,
         duration: form.duration || null,
-        min_duration_months: form.minDurationMonths ? Number(form.minDurationMonths) : null,
+        min_duration_months: form.minDurationMonths !== '' ? Number(form.minDurationMonths) : null,
         deadline: form.deadline || null,
         apply_link: form.applyLink || null,
         skills: form.skills ? form.skills.split(',').map(s => s.trim()).filter(Boolean) : [],
@@ -45,19 +71,24 @@ export default function ManualAddJobModal({ open, onClose, onAdded }) {
         if (!res.ok) throw new Error('Request failed')
         return res.json()
       })
-      .then(() => {
-        setForm(EMPTY_FORM)
-        onAdded()
-      })
-      .catch(() => setError('Failed to add job — check the backend is running.'))
+      .then(() => onSaved())
+      .catch(() => setError(
+        isEdit
+          ? 'Failed to save changes — check the backend is running.'
+          : 'Failed to add job — check the backend is running.'
+      ))
       .finally(() => setSubmitting(false))
   }
 
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-box" onClick={e => e.stopPropagation()}>
-        <h3>Add Job Manually</h3>
-        <div className="sub">Fill in what you know — only Company and Job Title are required.</div>
+        <h3>{isEdit ? 'Edit Job' : 'Add Job Manually'}</h3>
+        <div className="sub">
+          {isEdit
+            ? 'Changes only apply to your own tracker — the original listing stays untouched.'
+            : 'Fill in what you know — only Company and Job Title are required.'}
+        </div>
 
         <form onSubmit={handleSubmit}>
           <div className="field-grid">
@@ -82,8 +113,8 @@ export default function ManualAddJobModal({ open, onClose, onAdded }) {
               <input type="number" value={form.minDurationMonths} onChange={e => update('minDurationMonths', e.target.value)} />
             </div>
             <div className="field-row">
-              <label>Deadline</label>
-              <input value={form.deadline} onChange={e => update('deadline', e.target.value)} placeholder="leave blank for ASAP" />
+              <label>Deadline (blank = ASAP)</label>
+              <input type="date" value={form.deadline} onChange={e => update('deadline', e.target.value)} />
             </div>
           </div>
 
@@ -105,7 +136,7 @@ export default function ManualAddJobModal({ open, onClose, onAdded }) {
           <div className="modal-actions">
             <button type="button" className="btn" onClick={onClose}>Cancel</button>
             <button type="submit" className="btn primary" disabled={submitting}>
-              {submitting ? 'Adding…' : '+ Add Job'}
+              {submitting ? (isEdit ? 'Saving…' : 'Adding…') : isEdit ? '✎ Edit Job' : '+ Add Job'}
             </button>
           </div>
         </form>

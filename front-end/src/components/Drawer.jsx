@@ -1,4 +1,4 @@
-export default function Drawer({ job, onClose, onGenerate, generating }) {
+export default function Drawer({ job, onClose, onGenerate, onEdit, generating }) {
   return (
     <aside className="drawer">
       <div className="drawer-head">
@@ -32,7 +32,7 @@ export default function Drawer({ job, onClose, onGenerate, generating }) {
       </div>
       <div className="drawer-foot">
         <button className="btn" onClick={() => job?.applyLink && window.open(job.applyLink, '_blank')}>↗ Open posting</button>
-        <button className="btn primary">✎ Edit job</button>
+        <button className="btn primary" onClick={() => job && onEdit(job)}>✎ Edit job</button>
       </div>
     </aside>
   )

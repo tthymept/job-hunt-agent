@@ -4,7 +4,7 @@ import Dashboard from './components/Dashboard'
 import Explore from './components/Explore'
 import CVPage from './components/CVPage'
 import Drawer from './components/Drawer'
-import ManualAddJobModal from './components/ManualAddJobModal'
+import JobFormModal from './components/JobFormModal'
 
 const EXPLORE_PAGE_SIZE = 20
 const API = 'http://localhost:8000'
@@ -14,7 +14,7 @@ export default function App() {
   const [jobs, setJobs] = useState([])
   const [drawerJob, setDrawerJob] = useState(null)
   const [generatingId, setGeneratingId] = useState(null)
-  const [showManualModal, setShowManualModal] = useState(false)
+  const [jobModal, setJobModal] = useState(null) // null | { mode: 'add' } | { mode: 'edit', job }
 
   const [exploreJobs, setExploreJobs] = useState([])
   const [explorePage, setExplorePage] = useState(1)
@@ -23,10 +23,16 @@ export default function App() {
   const [exploreFilters, setExploreFilters] = useState({ role: '', location: 'all', postedDate: 'all' })
 
   function loadTracker() {
-    fetch(`${API}/api/tracker`)
+    return fetch(`${API}/api/tracker`)
       .then(res => res.json())
-      .then(setJobs)
-      .catch(err => console.error('Failed to load tracker:', err))
+      .then(data => {
+        setJobs(data)
+        return data
+      })
+      .catch(err => {
+        console.error('Failed to load tracker:', err)
+        return []
+      })
   }
 
   // Refetches whenever Dashboard becomes the active tab - simplest way
@@ -117,7 +123,7 @@ export default function App() {
             onStatusChange={handleStatusChange}
             onOpenDrawer={setDrawerJob}
             onUploadCv={handleUploadCv}
-            onOpenManualModal={() => setShowManualModal(true)}
+            onOpenManualModal={() => setJobModal({ mode: 'add' })}
           />
         )}
         {view === 'explore' && (
@@ -140,17 +146,24 @@ export default function App() {
       <div className="overlay" onClick={() => setDrawerJob(null)} />
       <Drawer
         job={drawerJob}
+        onEdit={job => setJobModal({ mode: 'edit', job })}
         onClose={() => setDrawerJob(null)}
         onGenerate={handleGenerateBullets}
         generating={drawerJob && generatingId === drawerJob.trackingId}
       />
 
-      <ManualAddJobModal
-        open={showManualModal}
-        onClose={() => setShowManualModal(false)}
-        onAdded={() => {
-          setShowManualModal(false)
-          loadTracker()
+      <JobFormModal
+        open={jobModal !== null}
+        mode={jobModal?.mode}
+        initial={jobModal?.job?.edit}
+        trackingId={jobModal?.job?.trackingId}
+        onClose={() => setJobModal(null)}
+        onSaved={() => {
+          setJobModal(null)
+          // Reload, then refresh the open drawer so it shows the edited values
+          loadTracker().then(data =>
+            setDrawerJob(prev => (prev ? data.find(j => j.trackingId === prev.trackingId) || prev : prev))
+          )
         }}
       />
     </div>

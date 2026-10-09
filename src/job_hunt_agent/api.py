@@ -2,6 +2,7 @@
 import os
 import json
 import uuid
+import re
 from datetime import datetime, timedelta, timezone
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, UploadFile, File
@@ -158,7 +159,9 @@ def get_explore_jobs(
 
 def reshape_tracker_row(row: dict) -> dict:
     job_raw = row.get("jobs") or {}
-    core = job_core_fields(job_raw)
+    overrides = row.get("overrides") or {}
+    merged_raw = {**job_raw, **overrides}
+    core = job_core_fields(merged_raw)
 
     bullets = None
     tailored = row.get("tailored_cv")
@@ -183,6 +186,7 @@ def reshape_tracker_row(row: dict) -> dict:
         "status": row.get("status") or "Saved / Not Applied",
         "bullets": bullets,
         "myUploadUrl": my_upload_url,
+        "edit": editable_fields(merged_raw),
         **core,
     }
 
@@ -341,3 +345,65 @@ def add_manual_job(body: ManualJobBody):
 
     track_job_for_user(uid, job_id)
     return {"status": "added", "job_id": job_id}
+
+# editable field
+FIELD_TO_COLUMN = {
+    "company": "employer_name",
+    "title": "job_title",
+    "location": "job_city",
+    "duration": "duration",
+    "min_duration_months": "min_duration_months",
+    "deadline": "application_deadline",
+    "apply_link": "job_apply_link",
+    "skills": "skills",
+    "description": "job_description",
+}
+
+def editable_fields(raw: dict) -> dict:
+    loc = format_location(raw)
+    deadline = raw.get("application_deadline") or raw.get("job_offer_expiration_datetime_utc") or ""
+    return {
+        "company": raw.get("employer_name") or "",
+        "title": raw.get("job_title") or "",
+        "location": "" if loc == "—" else loc,
+        "duration": raw.get("duration") or "",
+        "min_duration_months": raw.get("min_duration_months"),
+        # the form uses a date picker, so only ISO dates can be shown in it
+        "deadline": deadline[:10] if re.match(r"^\d{4}-\d{2}-\d{2}", deadline) else "",
+        "apply_link": raw.get("job_apply_link") or "",
+        "skills": raw.get("skills") or [],
+        "description": raw.get("job_description") or raw.get("short_description") or "",
+    }
+
+@app.patch("/api/tracker/{tracking_id}/edit")
+def edit_tracked_job(tracking_id: int, body: ManualJobBody):
+    uid = get_current_user_id()
+    row = (
+        supabase.table("user_job_tracking")
+        .select("tracking_id, jobs(*)")
+        .eq("tracking_id", tracking_id)
+        .eq("user_id", uid)
+        .single()
+        .execute()
+    )
+    base = editable_fields(row.data["jobs"] or {})
+    submitted = {
+        "company": body.company.strip(),
+        "title": body.title.strip(),
+        "location": (body.location or "").strip(),
+        "duration": (body.duration or "").strip(),
+        "min_duration_months": body.min_duration_months,
+        "deadline": (body.deadline or "").strip(),
+        "apply_link": (body.apply_link or "").strip(),
+        "skills": body.skills,
+        "description": (body.description or "").strip(),
+    }
+    # Keep only the fields that differ from the shared job row
+    overrides = {}
+    for field, column in FIELD_TO_COLUMN.items():
+        if submitted[field] != base[field]:
+            value = submitted[field]
+            overrides[column] = None if value in ("", [], None) else value
+
+    supabase.table("user_job_tracking").update({"overrides": overrides}).eq("tracking_id", tracking_id).eq("user_id", uid).execute()
+    return {"status": "ok"}
