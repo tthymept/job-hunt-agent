@@ -112,7 +112,7 @@ export default function Dashboard({ jobs, onStatusChange, onOpenDrawer, onUpload
 
       <div className="sectionhead"><h2>Deadline calendar</h2></div>
       <div className="card" style={{ padding: 16 }}>
-        <Calendar deadlineDays={[24, 28]} />
+        <Calendar jobs={jobs} onOpenJob={onOpenDrawer} />
       </div>
     </section>
   )

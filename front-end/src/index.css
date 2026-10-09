@@ -93,6 +93,10 @@ tbody tr:hover{background:var(--row-hover);}
 .calgrid .day.deadline{background:#fef3c7;color:#92400e;font-weight:700;}
 .calgrid .dot{position:absolute;bottom:6px;left:8px;width:5px;height:5px;border-radius:50%;background:var(--accent);}
 .calhead{display:flex;align-items:center;justify-content:space-between;}
+.calgrid .day.today{box-shadow:inset 0 0 0 2px var(--accent);}
+.calgrid .cal-item{all:unset;display:block;max-width:100%;margin-top:4px;font-size:11px;font-weight:600;color:var(--accent);cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.calgrid .cal-item:hover{text-decoration:underline;}
+.calgrid .cal-more{margin-top:4px;font-size:11px;font-weight:600;color:var(--muted);}
 .overlay{position:fixed;inset:0;background:var(--drawer-shade);opacity:0;pointer-events:none;transition:opacity .18s;z-index:30;}
 .drawer{position:fixed;top:0;right:0;height:100%;width:420px;max-width:92vw;background:var(--surface);
   border-left:1px solid var(--border);transform:translateX(100%);transition:transform .2s;z-index:31;
