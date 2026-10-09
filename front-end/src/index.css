@@ -63,6 +63,8 @@ input[type=text],input[type=search],select{background:var(--surface);border:1px 
 .sectionhead{display:flex;justify-content:space-between;align-items:center;margin:28px 0 12px;flex-wrap:wrap;gap:10px;}
 .sectionhead h2{margin:0;font-size:16px;}
 .sectionhead .count{color:var(--muted);font-weight:400;font-size:13px;margin-left:6px;}
+.filterbar{display:flex;align-items:flex-end;gap:16px;flex-wrap:wrap;padding:14px 16px;margin-bottom:12px;}
+.filterbar .field-row{margin-bottom:0;min-width:200px;}
 .tablewrap{overflow-x:auto;}
 table{width:100%;border-collapse:collapse;min-width:900px;}
 th{text-align:left;font-size:11px;letter-spacing:.03em;color:var(--muted);text-transform:uppercase;

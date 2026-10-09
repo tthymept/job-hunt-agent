@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react'
 import { STATUS, ST_CLASS } from '../data'
 import Calendar from './Calendar'
+import { locationGroup } from '../locationGroup'
 
 function UploadCell({ job, onUploadCv }) {
   const inputRef = useRef(null)
@@ -39,6 +40,32 @@ export default function Dashboard({ jobs, onStatusChange, onOpenDrawer, onUpload
     else setUrlMessage(result.message)
   }
 
+  const [showFilter, setShowFilter] = useState(false)
+  const [statusFilter, setStatusFilter] = useState('all')
+  const [locationFilter, setLocationFilter] = useState('all')
+
+  // Location dropdown options come from the jobs you actually have: { bangkok: { label, count } }
+  const locationOptions = {}
+  for (const j of jobs) {
+    const g = locationGroup(j.loc)
+    if (!locationOptions[g.key]) locationOptions[g.key] = { label: g.label, count: 0 }
+    locationOptions[g.key].count += 1
+  }
+
+  // visibleJobs is worked out from jobs + the two filters on every render.
+  // It is not stored in state, so it can never get out of sync with them.
+  const visibleJobs = jobs.filter(
+    j =>
+      (statusFilter === 'all' || j.status === statusFilter) &&
+      (locationFilter === 'all' || locationGroup(j.loc).key === locationFilter)
+  )
+  const activeFilters = [statusFilter, locationFilter].filter(f => f !== 'all').length
+
+  function clearFilters() {
+    setStatusFilter('all')
+    setLocationFilter('all')
+  }
+
   return (
     <section>
       <div className="pagehead">
@@ -67,13 +94,44 @@ export default function Dashboard({ jobs, onStatusChange, onOpenDrawer, onUpload
       {urlMessage && <div className="url-msg">{urlMessage}</div>}
 
       <div className="sectionhead">
-        <h2>Job tracker <span className="count">{jobs.length} jobs</span></h2>
+        <h2>
+          Job tracker{' '}
+          <span className="count">
+            {activeFilters ? `${visibleJobs.length} of ${jobs.length} jobs` : `${jobs.length} jobs`}
+          </span>
+        </h2>
         <div className="actions">
-          <button className="btn sm">☰ Filter</button>
+          <button className="btn sm" onClick={() => setShowFilter(s => !s)}>
+            ☰ Filter{activeFilters ? ` (${activeFilters})` : ''}
+          </button>
           <button className="btn sm">▤ Columns</button>
           <button className="btn sm primary" onClick={onOpenManualModal}>+ Add Job Manually</button>
         </div>
       </div>
+
+      {showFilter && (
+        <div className="card filterbar">
+          <div className="field-row">
+            <label>Status</label>
+            <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
+              <option value="all">All statuses</option>
+              {STATUS.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
+          <div className="field-row">
+            <label>Location</label>
+            <select value={locationFilter} onChange={e => setLocationFilter(e.target.value)}>
+              <option value="all">All locations</option>
+              {Object.entries(locationOptions)
+                .sort((a, b) => a[1].label.localeCompare(b[1].label))
+                .map(([key, o]) => (
+                  <option key={key} value={key}>{o.label} ({o.count})</option>
+                ))}
+            </select>
+          </div>
+          <button className="btn sm" onClick={clearFilters}>Clear</button>
+        </div>
+      )}
       <div className="card tablewrap">
         <table>
           <thead>
@@ -83,7 +141,7 @@ export default function Dashboard({ jobs, onStatusChange, onOpenDrawer, onUpload
             </tr>
           </thead>
           <tbody>
-            {jobs.map(j => (
+            {visibleJobs.map(j => (
               <tr key={j.trackingId}>
                 <td>
                   <select
@@ -106,6 +164,9 @@ export default function Dashboard({ jobs, onStatusChange, onOpenDrawer, onUpload
                 <td><button className="chev" onClick={() => onOpenDrawer(j)}>›</button></td>
               </tr>
             ))}
+            {jobs.length > 0 && visibleJobs.length === 0 && (
+              <tr><td colSpan={10}>No jobs match these filters.</td></tr>
+            )}
           </tbody>
         </table>
       </div>
