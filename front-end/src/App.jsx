@@ -112,6 +112,28 @@ export default function App() {
       .catch(err => console.error('Failed to upload CV:', err))
   }
 
+  // Returns { ok, message } so the Dashboard can show feedback under the URL bar
+  async function handleLoadFromUrl(url) {
+    try {
+      const res = await fetch(`${API}/api/jobs/from-url`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url }),
+      })
+      if (res.status === 422) {
+        const data = await res.json()
+        // Couldn't read the page: open the manual form with the link filled in
+        setJobModal({ mode: 'add', prefill: { apply_link: url } })
+        return { ok: false, message: `${data.detail} I opened the form with your link filled in.` }
+      }
+      if (!res.ok) throw new Error('Request failed')
+      await loadTracker()
+      return { ok: true }
+    } catch {
+      return { ok: false, message: 'Something went wrong. Check that the backend is running.' }
+    }
+  }
+
   return (
     <div className={`app${drawerJob ? ' drawer-open' : ''}`}>
       <Sidebar view={view} setView={setView} />
@@ -124,6 +146,7 @@ export default function App() {
             onOpenDrawer={setDrawerJob}
             onUploadCv={handleUploadCv}
             onOpenManualModal={() => setJobModal({ mode: 'add' })}
+            onLoadFromUrl={handleLoadFromUrl}
           />
         )}
         {view === 'explore' && (
@@ -155,7 +178,7 @@ export default function App() {
       <JobFormModal
         open={jobModal !== null}
         mode={jobModal?.mode}
-        initial={jobModal?.job?.edit}
+        initial={jobModal?.job?.edit || jobModal?.prefill}
         trackingId={jobModal?.job?.trackingId}
         onClose={() => setJobModal(null)}
         onSaved={() => {

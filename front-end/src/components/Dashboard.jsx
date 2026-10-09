@@ -1,4 +1,4 @@
-import { useRef } from 'react'
+import { useRef, useState } from 'react'
 import { STATUS, ST_CLASS } from '../data'
 import Calendar from './Calendar'
 
@@ -24,7 +24,21 @@ function UploadCell({ job, onUploadCv }) {
   )
 }
 
-export default function Dashboard({ jobs, onStatusChange, onOpenDrawer, onUploadCv, onOpenManualModal }) {
+export default function Dashboard({ jobs, onStatusChange, onOpenDrawer, onUploadCv, onOpenManualModal, onLoadFromUrl }) {
+  const [url, setUrl] = useState('')
+  const [loadingUrl, setLoadingUrl] = useState(false)
+  const [urlMessage, setUrlMessage] = useState(null)
+
+  async function handleLoad() {
+    if (!url.trim()) return
+    setLoadingUrl(true)
+    setUrlMessage(null)
+    const result = await onLoadFromUrl(url.trim())
+    setLoadingUrl(false)
+    if (result.ok) setUrl('')
+    else setUrlMessage(result.message)
+  }
+
   return (
     <section>
       <div className="pagehead">
@@ -39,9 +53,18 @@ export default function Dashboard({ jobs, onStatusChange, onOpenDrawer, onUpload
       </div>
 
       <div className="urlbar">
-        <input type="text" placeholder="Paste job posting URL..." />
-        <button className="btn accent-outline">⬇ Load Job</button>
+        <input
+          type="text"
+          placeholder="Paste job posting URL..."
+          value={url}
+          onChange={e => setUrl(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') handleLoad() }}
+        />
+        <button className="btn accent-outline" onClick={handleLoad} disabled={loadingUrl}>
+          {loadingUrl ? 'Loading…' : '⬇ Load Job'}
+        </button>
       </div>
+      {urlMessage && <div className="url-msg">{urlMessage}</div>}
 
       <div className="sectionhead">
         <h2>Job tracker <span className="count">{jobs.length} jobs</span></h2>

@@ -31,7 +31,7 @@ export default function JobFormModal({ open, mode, initial, trackingId, onClose,
   // Reset every time the modal opens: blank for Add, prefilled for Edit
   useEffect(() => {
     if (open) {
-      setForm(isEdit && initial ? toForm(initial) : EMPTY_FORM)
+      setForm(initial ? toForm(initial) : EMPTY_FORM)
       setError(null)
     }
   }, [open, isEdit, initial])
