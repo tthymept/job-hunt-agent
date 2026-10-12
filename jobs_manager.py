@@ -12,6 +12,8 @@ import psycopg2
 from dateutil import parser as date_parser
 from search_agent import search_jobs, insert_jobs, enrich_pending_jobs
 
+DAILY_DATE_POSTED = "week"  # JSearch window for the daily run: today / 3days / week / month
+
 
 def add_interest(user_id: int, role: str, country: str, city: str | None, conn) -> dict:
     """Declare a new interest. Re-activates it if it was previously removed/paused.
@@ -114,13 +116,13 @@ def run_daily_fetch(conn) -> None:
     for role, country, city in pairs:
         start = time.time()
         try:
-            jobs = search_jobs(role=role, country=country, city=city, num_pages=1, date_posted="today")
+            jobs = search_jobs(role=role, country=country, city=city, num_pages=1, date_posted=DAILY_DATE_POSTED)
             new_count = insert_jobs(jobs, conn)
-            log_fetch(conn, "daily_search", role, country, city, num_pages=1, date_posted="today",
+            log_fetch(conn, "daily_search", role, country, city, num_pages=1, date_posted=DAILY_DATE_POSTED,
                        num_jobs_found=len(jobs), num_jobs_new=new_count,
                        duration_seconds=round(time.time() - start, 2))
         except Exception as e:
-            log_fetch(conn, "daily_search", role, country, city, num_pages=1, date_posted="today",
+            log_fetch(conn, "daily_search", role, country, city, num_pages=1, date_posted=DAILY_DATE_POSTED,
                        status="failed", error_message=str(e),
                        duration_seconds=round(time.time() - start, 2))
             continue

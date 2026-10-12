@@ -92,6 +92,7 @@ def reshape_job(raw: dict, index: int, tracked_status: dict) -> dict:
     return {
         "num": f"J-{1000 + index}",
         "jobId": job_id,
+        "posted": (raw.get("job_posted_at_datetime_utc") or "—")[:10],
         "src": raw.get("job_publisher") or "—",
         "trackState": track_state,
         **core,
@@ -347,7 +348,6 @@ def add_manual_job(body: ManualJobBody):
         "application_deadline": body.deadline,
         "job_apply_link": body.apply_link,
         "job_description": body.description,
-        "short_description": body.description,
         "skills": body.skills,
         "job_publisher": "Manual",
         "enrichment_status": "done",
@@ -635,7 +635,6 @@ def add_job_from_url(body: UrlJobBody):
             "application_deadline": clean_date(merged.get("deadline")),
             "job_apply_link": url,
             "job_description": description,
-            "short_description": description[:300],
             "skills": [s for s in skills if isinstance(s, str)] if isinstance(skills, list) else [],
             "job_publisher": "Link",
             "enrichment_status": "done",

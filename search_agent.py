@@ -85,6 +85,9 @@ def search_jobs(role: str, country: str, city: str | None = None, num_pages: int
         if not cursor:
             break
 
+    print(f"Found {len(all_jobs)} jobs")
+    return all_jobs
+"""
     internship_jobs = [j for j in all_jobs if is_internship(j)]
     print(f"Filtered {len(all_jobs)} -> {len(internship_jobs)} internships")
     return internship_jobs
@@ -93,7 +96,7 @@ def search_jobs(role: str, country: str, city: str | None = None, num_pages: int
 def is_internship(job: dict) -> bool:
     text = f"{job.get('job_title', '')} {job.get('job_employment_type', '')}".lower()
     return "intern" in text
-
+"""
 
 # ---------- STEP 2: insert raw rows (pending) ----------
 
@@ -148,8 +151,7 @@ def extract_job_info_batch(jobs: list[tuple[str, str]]) -> dict[str, dict]:
     "duration": "string or null - human-readable internship length/dates if mentioned",
     "min_duration_months": "integer or null - convert duration to number of months (e.g. '12-week' -> 3)",
     "skills": ["array of specific tools/skills mentioned"],
-    "application_deadline": "string or null - explicit deadline if stated",
-    "short_description": "one sentence summary"
+    "application_deadline": "string or null - explicit deadline if stated"
   }}
 ]
 
@@ -211,13 +213,13 @@ def enrich_pending_jobs(conn, batch_size: int = BATCH_SIZE) -> None:
             cur.execute("""
                 UPDATE jobs
                 SET duration=%s, min_duration_months=%s, skills=%s,
-                    application_deadline=%s, short_description=%s,
+                    application_deadline=%s,
                     enrichment_status='done'
                 WHERE job_id=%s
             """, (
                 extracted.get("duration"), extracted.get("min_duration_months"),
                 extracted.get("skills"), extracted.get("application_deadline"),
-                extracted.get("short_description"), job_id,
+                job_id,
             ))
 
         conn.commit()

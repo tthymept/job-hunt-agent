@@ -18,7 +18,7 @@ const POSTED_DATE_OPTIONS = [
   { value: 'all', label: 'All' },
 ]
 
-export default function Explore({ jobs, onAdd, page, pageSize, total, onPageChange, sort, onSortChange, filters, onApplyFilters }) {
+export default function Explore({ jobs, onAdd, page, pageSize, total, onPageChange, sort, onSortChange, filters, onApplyFilters, onOpenDrawer }) {
   const totalPages = Math.max(1, Math.ceil(total / pageSize))
   const rangeStart = total === 0 ? 0 : (page - 1) * pageSize + 1
   const rangeEnd = Math.min(page * pageSize, total)
@@ -96,7 +96,7 @@ export default function Explore({ jobs, onAdd, page, pageSize, total, onPageChan
           <thead>
             <tr>
               <th></th><th>Company</th><th>Job Title</th><th>Location</th><th>Duration</th>
-              <th>Min. Duration</th><th>Deadline</th><th>Apply</th><th>Source</th>
+              <th>Min. Duration</th><th>Deadline</th><th>Apply</th><th>Date Posted</th><th>Source</th><th></th>
             </tr>
           </thead>
           <tbody>
@@ -120,7 +120,9 @@ export default function Explore({ jobs, onAdd, page, pageSize, total, onPageChan
                 <td>{j.co}</td><td className="job-title">{j.title}</td><td>{j.loc}</td>
                 <td>{j.dur}</td><td>{j.min}</td><td>{j.dl}</td>
                 <td><a className="applink" href={j.applyLink} target="_blank" rel="noreferrer">Open ↗</a></td>
+                <td>{j.posted}</td>
                 <td><span className="badge">{j.src}</span></td>
+                <td><button className="chev" onClick={() => onOpenDrawer({ ...j, readOnly: true })}>›</button></td>
               </tr>
             ))}
           </tbody>

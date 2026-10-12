@@ -161,6 +161,7 @@ export default function App() {
             onSortChange={handleSortChange}
             filters={exploreFilters}
             onApplyFilters={handleApplyFilters}
+            onOpenDrawer={setDrawerJob}
           />
         )}
         {view === 'cv' && <CVPage />}

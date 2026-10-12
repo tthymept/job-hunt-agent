@@ -1,6 +1,9 @@
 import JobDescription from './JobDescription'
 
 export default function Drawer({ job, onClose, onGenerate, onEdit, generating }) {
+  // Jobs opened from Explore are flagged readOnly: no CV suggestions and no editing
+  const readOnly = job?.readOnly
+
   return (
     <aside className="drawer">
       <div className="drawer-head">
@@ -16,25 +19,31 @@ export default function Drawer({ job, onClose, onGenerate, onEdit, generating })
         </div>
         <h4>Job Description</h4>
         <JobDescription text={job?.jd} />
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-          <h4 style={{ margin: 0 }}>Suggested Bullets</h4>
-          <button
-            className={`btn sm${job?.bullets ? '' : ' primary'}`}
-            disabled={generating}
-            onClick={() => job && onGenerate(job.trackingId)}
-          >
-            {generating ? '…' : job?.bullets ? '↻ Refresh' : '✨ Generate'}
-          </button>
-        </div>
-        <div>
-          {job?.bullets
-            ? job.bullets.map((b, i) => <div className="bullet" key={i}>{b}</div>)
-            : <div className="jd" style={{ marginBottom: 0 }}>Not generated yet — click Generate above.</div>}
-        </div>
+        {!readOnly && (
+          <>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+              <h4 style={{ margin: 0 }}>Suggested Bullets</h4>
+              <button
+                className={`btn sm${job?.bullets ? '' : ' primary'}`}
+                disabled={generating}
+                onClick={() => job && onGenerate(job.trackingId)}
+              >
+                {generating ? '…' : job?.bullets ? '↻ Refresh' : '✨ Generate'}
+              </button>
+            </div>
+            <div>
+              {job?.bullets
+                ? job.bullets.map((b, i) => <div className="bullet" key={i}>{b}</div>)
+                : <div className="jd" style={{ marginBottom: 0 }}>Not generated yet — click Generate above.</div>}
+            </div>
+          </>
+        )}
       </div>
       <div className="drawer-foot">
         <button className="btn" onClick={() => job?.applyLink && window.open(job.applyLink, '_blank')}>↗ Open posting</button>
-        <button className="btn primary" onClick={() => job && onEdit(job)}>✎ Edit job</button>
+        {!readOnly && (
+          <button className="btn primary" onClick={() => job && onEdit(job)}>✎ Edit job</button>
+        )}
       </div>
     </aside>
   )
