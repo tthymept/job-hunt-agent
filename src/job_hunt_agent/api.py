@@ -19,6 +19,8 @@ from google import genai
 from google.genai import types
 from pydantic import BaseModel
 from supabase import create_client, Client
+from extract_agent import extract_cv_structure
+from tailor_agent import tailor_cv
 
 load_dotenv()
 
@@ -180,7 +182,7 @@ def reshape_tracker_row(row: dict) -> dict:
     if tailored:
         try:
             parsed = json.loads(tailored) if isinstance(tailored, str) else tailored
-            bullets = parsed.get("bullets")
+            bullets = tailored_groups(parsed) if "sections" in parsed else None
         except (ValueError, AttributeError, TypeError):
             bullets = None
 
@@ -255,20 +257,45 @@ def update_status(tracking_id: int, body: StatusBody):
     }).eq("tracking_id", tracking_id).execute()
     return {"status": "ok"}
 
-# STUB: no real tailoring agent is wired into this endpoint yet.
-# This exists so the frontend flow (Generate -> show bullets -> Refresh)
-# is complete now, ready to swap in a real agent call later with zero
-# frontend changes.
-PLACEHOLDER_BULLETS = [
-    "Placeholder bullet — real tailoring agent not connected yet.",
-    "Swap this endpoint's logic for your actual CV tailor agent later.",
-]
-
+# Wire CV
 @app.post("/api/tracker/{tracking_id}/generate-bullets")
 def generate_bullets(tracking_id: int):
-    payload = json.dumps({"bullets": PLACEHOLDER_BULLETS})
-    supabase.table("user_job_tracking").update({"tailored_cv": payload}).eq("tracking_id", tracking_id).execute()
-    return {"bullets": PLACEHOLDER_BULLETS}
+    uid = get_current_user_id()
+
+    # 1. This user's master CV, as read when they uploaded it on the My CV page
+    user_rows = supabase.table("users").select("cv_structure").eq("user_id", uid).execute().data
+    cv_structure = user_rows[0].get("cv_structure") if user_rows else None
+    if not cv_structure:
+        raise HTTPException(status_code=400, detail="Upload your CV on the My CV page first.")
+
+    # 2. This job's description, with this user's edits applied on top
+    rows = (
+        supabase.table("user_job_tracking")
+        .select("*, jobs(*)")
+        .eq("tracking_id", tracking_id)
+        .eq("user_id", uid)
+        .execute()
+        .data
+    )
+    if not rows:
+        raise HTTPException(status_code=404, detail="Tracked job not found.")
+    row = rows[0]
+    merged = {**(row.get("jobs") or {}), **(row.get("overrides") or {})}
+    description = merged.get("job_description") or ""
+    if not description.strip():
+        raise HTTPException(status_code=400, detail="This job has no description to tailor against. Use Edit job to add one.")
+
+    # 3. Run the tailor agent and save its output on the tracking row
+    try:
+        tailored = tailor_cv(cv_structure, description)
+    except Exception as e:
+        print(f"Tailoring failed: {e}")
+        raise HTTPException(status_code=502, detail="The tailor agent failed (it may be rate limited). Try again in a minute.")
+
+    supabase.table("user_job_tracking").update({"tailored_cv": json.dumps(tailored)}).eq("tracking_id", tracking_id).execute()
+    return {"bullets": tailored_groups(tailored)}
+
+#---
 
 @app.post("/api/tracker/{tracking_id}/upload")
 async def upload_my_cv(tracking_id: int, file: UploadFile = File(...)):
@@ -643,3 +670,101 @@ def add_job_from_url(body: UrlJobBody):
 
     status = track_job_for_user(uid, job_id)
     return {"status": status, "job_id": job_id}
+
+
+# ---------- My CV (master CV) ----------
+
+RESUME_BUCKET = "resumes"
+MAX_CV_BYTES = 10 * 1024 * 1024
+
+
+def tailored_groups(tailored: dict) -> list[dict]:
+    """Turns the tailor agent's sections -> entries output into
+    [{label, lines}] groups for the drawer: one group per CV entry that was tailored."""
+    groups = []
+    for section in tailored.get("sections", []):
+        for entry in section.get("entries", []):
+            text = entry.get("tailored_bullets")
+            if not text:
+                continue
+            lines = [re.sub(r"^\s*[-•*]\s*", "", line).strip() for line in text.splitlines()]
+            lines = [line for line in lines if line]
+            if not lines:
+                continue
+            heading = (entry.get("heading") or "").strip()
+            sub = entry.get("subheading")
+            label = f"{heading} — {sub}" if sub else heading
+            groups.append({"label": label or section.get("title", ""), "lines": lines})
+    return groups
+
+
+def cv_payload(uid: int) -> dict:
+    res = (
+        supabase.table("users")
+        .select("resume_path, resume_filename, resume_size_kb, resume_updated_at, cv_structure")
+        .eq("user_id", uid)
+        .execute()
+    )
+    row = res.data[0] if res.data else {}
+    if not row.get("resume_path"):
+        return {"exists": False}
+
+    download_url = None
+    try:
+        signed = supabase.storage.from_(RESUME_BUCKET).create_signed_url(row["resume_path"], 3600)
+        download_url = signed.get("signedURL") or signed.get("signed_url")
+    except Exception:
+        download_url = None
+
+    return {
+        "exists": True,
+        "fileName": row.get("resume_filename") or "cv.pdf",
+        "sizeKb": row.get("resume_size_kb"),
+        "updatedAt": row.get("resume_updated_at"),
+        "structure": row.get("cv_structure"),
+        "downloadUrl": download_url,
+    }
+
+
+@app.get("/api/cv")
+def get_cv():
+    return cv_payload(get_current_user_id())
+
+
+@app.post("/api/cv")
+def upload_master_cv(file: UploadFile = File(...)):
+    # Plain def (not async) so the slow Gemini call below runs in a worker thread
+    uid = get_current_user_id()
+    filename = file.filename or "cv.pdf"
+    if not filename.lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="Please upload a PDF file.")
+    contents = file.file.read()
+    if len(contents) > MAX_CV_BYTES:
+        raise HTTPException(status_code=400, detail="That file is over 10 MB.")
+    if not contents.startswith(b"%PDF"):
+        raise HTTPException(status_code=400, detail="That doesn't look like a valid PDF.")
+
+    path = f"{uid}/cv.pdf"
+    supabase.storage.from_(RESUME_BUCKET).upload(
+        path, contents, {"content-type": "application/pdf", "upsert": "true"}
+    )
+    supabase.table("users").update({
+        "resume_path": path,
+        "resume_filename": filename,
+        "resume_size_kb": round(len(contents) / 1024),
+        "resume_updated_at": datetime.now(timezone.utc).isoformat(),
+        "cv_structure": None,  # the old structure belonged to the old file
+    }).eq("user_id", uid).execute()
+
+    warning = None
+    try:
+        structure = extract_cv_structure(contents)
+        supabase.table("users").update({"cv_structure": structure}).eq("user_id", uid).execute()
+    except Exception as e:
+        print(f"CV extraction failed: {e}")
+        warning = "Your CV was saved, but reading its text failed. Try uploading it again in a minute."
+
+    payload = cv_payload(uid)
+    if warning:
+        payload["warning"] = warning
+    return payload

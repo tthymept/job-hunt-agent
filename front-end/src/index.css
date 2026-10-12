@@ -123,6 +123,7 @@ tbody tr:hover{background:var(--row-hover);}
 .jd-rich li{margin-bottom:5px;}
 .jd-rich strong{color:var(--text);font-weight:600;}
 .bullet{background:var(--row-hover);border-radius:8px;padding:10px 12px;font-size:12.5px;line-height:1.5;margin-bottom:8px;}
+.bullet-label{font-size:12px;font-weight:600;color:var(--sub);margin-bottom:6px;}
 .drawer-foot{padding:16px 20px;border-top:1px solid var(--border);display:flex;gap:10px;justify-content:flex-end;}
 .filterbar{display:flex;gap:16px;flex-wrap:wrap;padding:16px;margin-bottom:20px;}
 .filterbar .f{display:flex;flex-direction:column;gap:6px;}

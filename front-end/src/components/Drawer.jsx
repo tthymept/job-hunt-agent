@@ -28,13 +28,26 @@ export default function Drawer({ job, onClose, onGenerate, onEdit, generating })
                 disabled={generating}
                 onClick={() => job && onGenerate(job.trackingId)}
               >
-                {generating ? '…' : job?.bullets ? '↻ Refresh' : '✨ Generate'}
+                {generating ? 'Generating…' : job?.bullets ? '↻ Refresh' : '✨ Generate'}
               </button>
             </div>
             <div>
-              {job?.bullets
-                ? job.bullets.map((b, i) => <div className="bullet" key={i}>{b}</div>)
-                : <div className="jd" style={{ marginBottom: 0 }}>Not generated yet — click Generate above.</div>}
+              {job?.bullets ? (
+                job.bullets.length > 0 ? (
+                  job.bullets.map((g, i) => (
+                    <div key={i} style={{ marginBottom: 12 }}>
+                      <div className="bullet-label">{g.label}</div>
+                      {g.lines.map((line, j) => <div className="bullet" key={j}>{line}</div>)}
+                    </div>
+                  ))
+                ) : (
+                  <div className="jd" style={{ marginBottom: 0 }}>
+                    None of your CV entries were close enough to this job to suggest changes.
+                  </div>
+                )
+              ) : (
+                <div className="jd" style={{ marginBottom: 0 }}>Not generated yet — click Generate above.</div>
+              )}
             </div>
           </>
         )}

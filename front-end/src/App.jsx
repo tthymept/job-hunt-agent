@@ -91,16 +91,22 @@ export default function App() {
     setExploreFilters(newFilters)
     setExplorePage(1)
   }
-
   function handleGenerateBullets(trackingId) {
     setGeneratingId(trackingId)
     fetch(`${API}/api/tracker/${trackingId}/generate-bullets`, { method: 'POST' })
-      .then(res => res.json())
+      .then(async res => {
+        const data = await res.json()
+        if (!res.ok) throw new Error(data.detail || 'Failed to generate suggestions')
+        return data
+      })
       .then(data => {
         setJobs(prev => prev.map(j => (j.trackingId === trackingId ? { ...j, bullets: data.bullets } : j)))
         setDrawerJob(prev => (prev && prev.trackingId === trackingId ? { ...prev, bullets: data.bullets } : prev))
       })
-      .catch(err => console.error('Failed to generate bullets:', err))
+      .catch(err => {
+        console.error('Failed to generate bullets:', err)
+        alert(err.message)
+      })
       .finally(() => setGeneratingId(null))
   }
 
