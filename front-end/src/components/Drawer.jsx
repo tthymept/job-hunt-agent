@@ -1,3 +1,5 @@
+import JobDescription from './JobDescription'
+
 export default function Drawer({ job, onClose, onGenerate, onEdit, generating }) {
   return (
     <aside className="drawer">
@@ -13,7 +15,7 @@ export default function Drawer({ job, onClose, onGenerate, onEdit, generating })
           {(job?.skills || []).map(s => <span className="tag" key={s}>{s}</span>)}
         </div>
         <h4>Job Description</h4>
-        <div className="jd">{job?.jd}</div>
+        <JobDescription text={job?.jd} />
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
           <h4 style={{ margin: 0 }}>Suggested Bullets</h4>
           <button
