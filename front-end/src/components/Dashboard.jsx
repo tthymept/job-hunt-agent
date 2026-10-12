@@ -5,12 +5,18 @@ import { locationGroup } from '../locationGroup'
 
 function UploadCell({ job, onUploadCv }) {
   const inputRef = useRef(null)
-  if (job.myUploadUrl) {
-    return <a className="filelink" href={job.myUploadUrl} target="_blank" rel="noreferrer">📎 View upload</a>
-  }
+
   return (
     <>
-      <button className="btn sm" onClick={() => inputRef.current.click()}>⬆ Upload</button>
+      {job.myUploadUrl ? (
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 10 }}>
+          <a className="filelink" href={job.myUploadUrl} target="_blank" rel="noreferrer">📎 View upload</a>
+          <button className="btn sm" title="Replace upload" aria-label="Replace upload" onClick={() => inputRef.current.click()}>⬆</button>
+        </span>
+      ) : (
+        <button className="btn sm" onClick={() => inputRef.current.click()}>⬆ Upload</button>
+      )}
+      {/* One hidden file input serves both the Upload and Replace buttons */}
       <input
         ref={inputRef}
         type="file"
@@ -19,6 +25,7 @@ function UploadCell({ job, onUploadCv }) {
         onChange={e => {
           const file = e.target.files[0]
           if (file) onUploadCv(job.trackingId, file)
+          e.target.value = '' // so choosing the same file again still triggers onChange
         }}
       />
     </>
@@ -137,7 +144,7 @@ export default function Dashboard({ jobs, onStatusChange, onOpenDrawer, onUpload
           <thead>
             <tr>
               <th>Status</th><th>Company</th><th>Job Title</th><th>Location</th><th>Duration</th>
-              <th>Min. Duration</th><th>Deadline</th><th>Apply Link</th><th>My Upload</th><th></th>
+              <th>Min. Duration</th><th>Deadline</th><th>Apply Link</th><th className="cvhead">My Upload</th><th></th>
             </tr>
           </thead>
           <tbody>
