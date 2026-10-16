@@ -175,3 +175,12 @@ th.cvhead,td.cvcell{text-align:center;}
 .field-row textarea{resize:vertical;min-height:70px;}
 .field-grid{display:grid;grid-template-columns:1fr 1fr;gap:0 14px;}
 .modal-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:6px;}
+.interest-list{display:flex;flex-direction:column;gap:8px;margin-bottom:18px;}
+.interest-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 12px;border:1px solid var(--border);border-radius:8px;}
+.interest-row.paused{opacity:.65;}
+.interest-main{min-width:0;}
+.interest-role{font-weight:600;font-size:13.5px;}
+.interest-meta{font-size:12px;color:var(--sub);margin-top:2px;}
+.interest-actions{display:flex;gap:6px;flex:none;}
+.interest-empty{color:var(--sub);font-size:13px;margin:0 0 18px;}
+.interest-error{color:#991b1b;font-size:12.5px;margin:0 0 12px;}

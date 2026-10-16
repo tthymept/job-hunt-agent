@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import InterestsModal from './InterestsModal'
 
 function getPageNumbers(current, total) {
   if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1)
@@ -28,9 +29,16 @@ export default function Explore({ jobs, onAdd, page, pageSize, total, onPageChan
   const [draftRole, setDraftRole] = useState(filters.role)
   const [draftLocation, setDraftLocation] = useState(filters.location)
   const [draftPostedDate, setDraftPostedDate] = useState(filters.postedDate)
+  const [interestsOpen, setInterestsOpen] = useState(false)
 
   function handleSearch() {
     onApplyFilters({ role: draftRole, location: draftLocation, postedDate: draftPostedDate })
+  }
+
+  function handleCloseInterests() {
+    setInterestsOpen(false)
+    // A fresh filters object makes App refetch, so jobs from a finished backfill show up
+    onApplyFilters({ ...filters })
   }
 
   return (
@@ -40,7 +48,7 @@ export default function Explore({ jobs, onAdd, page, pageSize, total, onPageChan
           <h1>Explore Jobs</h1>
           <p>Find relevant internships and add them directly to your pipeline.</p>
         </div>
-        <button className="btn">📑 Saved searches</button>
+        <button className="btn" onClick={() => setInterestsOpen(true)}>🎯 Search interests</button>
       </div>
 
       <div className="card filterbar">
@@ -146,6 +154,8 @@ export default function Explore({ jobs, onAdd, page, pageSize, total, onPageChan
         </div>
         <span>{rangeStart}–{rangeEnd} of {total} jobs</span>
       </div>
+
+      <InterestsModal open={interestsOpen} onClose={handleCloseInterests} />
     </section>
   )
 }
