@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 
-import { API } from '../api'
+import { API, apiFetch, readJson, accessKeyHeaders } from '../api'
 import PdfViewer from './PdfViewer'
 
 function formatDate(iso) {
@@ -17,8 +17,8 @@ export default function CVPage() {
   // Load the saved CV from the backend every time this page opens,
   // so it is still there after a reload or switching tabs
   useEffect(() => {
-    fetch(`${API}/api/cv`)
-      .then(res => res.json())
+    apiFetch(`/api/cv`)
+      .then(readJson)
       .then(setCv)
       .catch(() => setMessage('Could not load your CV. Is the backend running?'))
   }, [])
@@ -38,7 +38,7 @@ export default function CVPage() {
     const formData = new FormData()
     formData.append('file', file)
     try {
-      const res = await fetch(`${API}/api/cv`, { method: 'POST', body: formData })
+      const res = await apiFetch(`/api/cv`, { method: 'POST', body: formData })
       const data = await res.json()
       if (!res.ok) throw new Error(data.detail || 'Upload failed')
       setCv(data)
@@ -127,7 +127,10 @@ export default function CVPage() {
       {hasCv && (
         <div className="card pdf-card">
           {/* updatedAt in the URL makes the browser fetch the new file after a replace */}
-          <PdfViewer url={`${API}/api/cv/file?v=${encodeURIComponent(cv.updatedAt || '')}`} />
+          <PdfViewer
+            url={`${API}/api/cv/file?v=${encodeURIComponent(cv.updatedAt || '')}`}
+            headers={accessKeyHeaders()}
+          />
         </div>
       )}
 

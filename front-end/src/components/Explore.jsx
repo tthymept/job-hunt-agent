@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import InterestsModal from './InterestsModal'
-import { API } from '../api'
+import { apiFetch, readJson } from '../api'
 
 function getPageNumbers(current, total) {
   if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1)
@@ -35,8 +35,8 @@ export default function Explore({ jobs, onAdd, page, pageSize, total, onPageChan
   const [locations, setLocations] = useState([])
 
   function loadLocations() {
-    fetch(`${API}/api/explore-locations`)
-      .then(res => res.json())
+    apiFetch(`/api/explore-locations`)
+      .then(readJson)
       .then(setLocations)
       .catch(err => console.error('Failed to load locations:', err))
   }

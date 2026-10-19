@@ -6,15 +6,19 @@ import re
 import socket
 import ipaddress
 import hashlib
+import hmac
 from html import unescape
+from pathlib import Path
 from urllib.parse import urlparse
 from datetime import datetime, timedelta, timezone
 
 import requests
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, UploadFile, File, BackgroundTasks, Response
+from fastapi import FastAPI, HTTPException, UploadFile, File, BackgroundTasks, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from google import genai
 from google.genai import types
 from pydantic import BaseModel
@@ -42,6 +46,25 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Single-user lock for the deployed app. When APP_ACCESS_KEY is set, every /api
+# request (except the health check) must send it in the X-Access-Key header.
+# Locally it is usually unset, so nothing changes during development.
+APP_ACCESS_KEY = os.environ.get("APP_ACCESS_KEY", "")
+
+@app.middleware("http")
+async def require_access_key(request: Request, call_next):
+    path = request.url.path
+    if (
+        APP_ACCESS_KEY
+        and path.startswith("/api/")
+        and path != "/api/health"
+        and request.method != "OPTIONS"  # CORS preflight carries no custom headers
+    ):
+        sent = request.headers.get("x-access-key", "")
+        if not hmac.compare_digest(sent.encode(), APP_ACCESS_KEY.encode()):
+            return JSONResponse(status_code=401, content={"detail": "Access key required."})
+    return await call_next(request)
 
 @app.get("/api/health")
 def health():
@@ -923,3 +946,13 @@ def remove_interest_endpoint(interest_id: int):
     if not response.data:
         raise HTTPException(status_code=404, detail="Interest not found.")
     return {"status": "removed"}
+
+
+# ---------- Frontend ----------
+
+# In production the built React app (front-end/dist) is served by this same
+# server, so the page and the API share one URL. Mounted last so every /api
+# route above takes priority. Locally, without a build, Vite serves the app instead.
+FRONTEND_DIST = Path(__file__).resolve().parents[2] / "front-end" / "dist"
+if FRONTEND_DIST.is_dir():
+    app.mount("/", StaticFiles(directory=FRONTEND_DIST, html=True), name="frontend")

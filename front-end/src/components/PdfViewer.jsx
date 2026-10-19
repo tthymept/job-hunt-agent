@@ -17,7 +17,7 @@ const MAX_PIXEL_RATIO = 2
 // Renders every page of the PDF at `url` as a canvas that fits the container width.
 // Canvases are used instead of an <iframe>, because iPhone/iPad Safari only shows
 // the first page of a PDF inside an iframe and won't let you scroll it.
-export default function PdfViewer({ url }) {
+export default function PdfViewer({ url, headers }) {
   const containerRef = useRef(null)
   const [pdf, setPdf] = useState(null)
   const [error, setError] = useState(null)
@@ -32,7 +32,7 @@ export default function PdfViewer({ url }) {
     loadPdfJs()
       .then(pdfjs => {
         if (cancelled) return null
-        task = pdfjs.getDocument({ url })
+        task = pdfjs.getDocument({ url, httpHeaders: headers })
         return task.promise
       })
       .then(doc => { if (!cancelled && doc) setPdf(doc) })

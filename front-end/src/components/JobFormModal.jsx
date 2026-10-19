@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 
-import { API } from '../api'
+import { apiFetch } from '../api'
 
 const EMPTY_FORM = {
   company: '', title: '', location: '', duration: '',
@@ -51,8 +51,8 @@ export default function JobFormModal({ open, mode, initial, trackingId, onClose,
     setSubmitting(true)
     setError(null)
 
-    const url = isEdit ? `${API}/api/tracker/${trackingId}/edit` : `${API}/api/jobs/manual`
-    fetch(url, {
+    const url = isEdit ? `/api/tracker/${trackingId}/edit` : `/api/jobs/manual`
+    apiFetch(url, {
       method: isEdit ? 'PATCH' : 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

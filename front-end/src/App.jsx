@@ -5,13 +5,15 @@ import Explore from './components/Explore'
 import CVPage from './components/CVPage'
 import Drawer from './components/Drawer'
 import JobFormModal from './components/JobFormModal'
-import { API } from './api'
+import AccessKeyGate from './components/AccessKeyGate'
+import { apiFetch, readJson } from './api'
 
 const EXPLORE_PAGE_SIZE = 20
 
 export default function App() {
   const [view, setView] = useState('dashboard')
   const [me, setMe] = useState(null)
+  const [locked, setLocked] = useState(false) // true when the server rejected the access key
   const [jobs, setJobs] = useState([])
   const [drawerJob, setDrawerJob] = useState(null)
   const [generatingId, setGeneratingId] = useState(null)
@@ -24,8 +26,8 @@ export default function App() {
   const [exploreFilters, setExploreFilters] = useState({ role: '', location: 'all', postedDate: 'all' })
 
   function loadTracker() {
-    return fetch(`${API}/api/tracker`)
-      .then(res => res.json())
+    return apiFetch(`/api/tracker`)
+      .then(readJson)
       .then(data => {
         setJobs(data)
         return data
@@ -36,9 +38,16 @@ export default function App() {
       })
   }
 
+  // apiFetch fires this event on any 401 reply
   useEffect(() => {
-    fetch(`${API}/api/me`)
-      .then(res => res.json())
+    const lock = () => setLocked(true)
+    window.addEventListener('access-key-needed', lock)
+    return () => window.removeEventListener('access-key-needed', lock)
+  }, [])
+
+  useEffect(() => {
+    apiFetch(`/api/me`)
+      .then(readJson)
       .then(setMe)
       .catch(err => console.error('Failed to load user:', err))
   }, [])
@@ -58,8 +67,8 @@ export default function App() {
       location: exploreFilters.location,
       posted_date: exploreFilters.postedDate,
     })
-    fetch(`${API}/api/explore-jobs?${params}`)
-      .then(res => res.json())
+    apiFetch(`/api/explore-jobs?${params}`)
+      .then(readJson)
       .then(data => {
         setExploreJobs(data.jobs)
         setExploreTotal(data.total)
@@ -73,7 +82,7 @@ export default function App() {
     } else {
       setJobs(prev => prev.map(j => (j.trackingId === trackingId ? { ...j, status } : j)))
     }
-    fetch(`${API}/api/tracker/${trackingId}/status`, {
+    apiFetch(`/api/tracker/${trackingId}/status`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status }),
@@ -83,7 +92,7 @@ export default function App() {
   function handleAddToMyJobs(index) {
     const job = exploreJobs[index]
     setExploreJobs(prev => prev.map((j, i) => (i === index ? { ...j, trackState: 'added' } : j)))
-    fetch(`${API}/api/tracker`, {
+    apiFetch(`/api/tracker`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ job_id: job.jobId }),
@@ -101,7 +110,7 @@ export default function App() {
   }
   function handleGenerateBullets(trackingId) {
     setGeneratingId(trackingId)
-    fetch(`${API}/api/tracker/${trackingId}/generate-bullets`, { method: 'POST' })
+    apiFetch(`/api/tracker/${trackingId}/generate-bullets`, { method: 'POST' })
       .then(async res => {
         const data = await res.json()
         if (!res.ok) throw new Error(data.detail || 'Failed to generate suggestions')
@@ -121,7 +130,7 @@ export default function App() {
   function handleUploadCv(trackingId, file) {
     const formData = new FormData()
     formData.append('file', file)
-    fetch(`${API}/api/tracker/${trackingId}/upload`, { method: 'POST', body: formData })
+    apiFetch(`/api/tracker/${trackingId}/upload`, { method: 'POST', body: formData })
       .then(() => loadTracker())
       .catch(err => console.error('Failed to upload CV:', err))
   }
@@ -129,7 +138,7 @@ export default function App() {
   // Returns { ok, message } so the Dashboard can show feedback under the URL bar
   async function handleLoadFromUrl(url) {
     try {
-      const res = await fetch(`${API}/api/jobs/from-url`, {
+      const res = await apiFetch(`/api/jobs/from-url`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url }),
@@ -147,6 +156,8 @@ export default function App() {
       return { ok: false, message: 'Something went wrong. Check that the backend is running.' }
     }
   }
+
+  if (locked) return <AccessKeyGate />
 
   return (
     <div className={`app${drawerJob ? ' drawer-open' : ''}`}>

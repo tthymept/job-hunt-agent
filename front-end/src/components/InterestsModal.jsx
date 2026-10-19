@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { API, JSON_HEADERS } from '../api'
+import { apiFetch, readJson, JSON_HEADERS } from '../api'
 
 
 function titleCase(text) {
@@ -23,8 +23,8 @@ export default function InterestsModal({ open, onClose }) {
   const [error, setError] = useState(null)
 
   function loadInterests() {
-    return fetch(`${API}/api/interests`)
-      .then(res => res.json())
+    return apiFetch(`/api/interests`)
+      .then(readJson)
       .then(setInterests)
       .catch(err => console.error('Failed to load interests:', err))
   }
@@ -53,7 +53,7 @@ export default function InterestsModal({ open, onClose }) {
     setSubmitting(true)
     setError(null)
     try {
-      const res = await fetch(`${API}/api/interests`, {
+      const res = await apiFetch(`/api/interests`, {
         method: 'POST',
         headers: JSON_HEADERS,
         body: JSON.stringify({ role, country, city }),
@@ -73,7 +73,7 @@ export default function InterestsModal({ open, onClose }) {
 
   async function updateStatus(id, status) {
     try {
-      await fetch(`${API}/api/interests/${id}`, {
+      await apiFetch(`/api/interests/${id}`, {
         method: 'PATCH',
         headers: JSON_HEADERS,
         body: JSON.stringify({ status }),
@@ -87,7 +87,7 @@ export default function InterestsModal({ open, onClose }) {
   async function removeInterest(id) {
     if (!window.confirm('Remove this search interest? Jobs already found will stay in Explore.')) return
     try {
-      await fetch(`${API}/api/interests/${id}`, { method: 'DELETE' })
+      await apiFetch(`/api/interests/${id}`, { method: 'DELETE' })
       await loadInterests()
     } catch (err) {
       setError('Could not remove this interest. Is the backend running?')

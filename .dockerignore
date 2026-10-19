@@ -1,0 +1,20 @@
+# Secrets and personal files never go into the image
+.env
+.env.*
+cv.pdf
+cv.txt
+cv_structured.json
+job_description.txt
+tailored_output.json
+
+# Rebuilt inside the image
+.venv
+front-end/node_modules
+front-end/dist
+__pycache__
+*.py[oc]
+
+.git
+.github
+tests
+migrations

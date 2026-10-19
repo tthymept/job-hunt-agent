@@ -19,10 +19,11 @@ Built as a learning project (React + FastAPI + Supabase) and a portfolio piece.
 9. [Frontend](#frontend)
 10. [Scheduled fetching (GitHub Actions)](#scheduled-fetching-github-actions)
 11. [Setup and running locally](#setup-and-running-locally)
-12. [Design decisions](#design-decisions)
-13. [Known limitations and cleanup list](#known-limitations-and-cleanup-list)
-14. [Roadmap](#roadmap)
-15. [Development history](#development-history)
+12. [Deployment (Render)](#deployment-render)
+13. [Design decisions](#design-decisions)
+14. [Known limitations and cleanup list](#known-limitations-and-cleanup-list)
+15. [Roadmap](#roadmap)
+16. [Development history](#development-history)
 
 ---
 
@@ -56,7 +57,7 @@ Built as a learning project (React + FastAPI + Supabase) and a portfolio piece.
 | Managing search interests from the UI | Working (Explore → Search interests): add, pause, resume, remove, retry a failed first fetch |
 | Phone and tablet layout | Working: icon rail on iPad, bottom tab bar and card rows on iPhone |
 | Tests | `pytest` unit tests for parsing, cleanup, URL safety and tailoring helpers, run in CI |
-| Deployment | **Not done.** Frontend and backend run locally |
+| Deployment | One Docker service on Render (FastAPI serves the React build), locked with an access key. See [Deployment](#deployment-render) |
 
 ---
 
@@ -471,6 +472,47 @@ The tests use dummy API keys and never call Supabase, JSearch or Gemini.
 
 ---
 
+## Deployment (Render)
+
+The whole app runs as **one web service**. The `Dockerfile` first builds the React app, then starts FastAPI, which serves `/api/...` and the built page from the same URL. Because the page and the API share one origin, the browser needs no CORS setup or API URL.
+
+```
+Browser (iPhone / iPad / laptop)
+   │  https://job-hunt-agent.onrender.com
+   ▼
+Render web service (Docker)
+   ├── /api/...  → FastAPI (checks X-Access-Key)
+   └── /         → front-end/dist (built React app)
+         │
+         ├── Supabase (Postgres + Storage)
+         ├── Gemini
+         └── JSearch (RapidAPI)
+
+GitHub Actions (every 2 days) → run_daily_fetch.py → Supabase   (unchanged, separate)
+```
+
+**Access key.** The deployed app is for one person, so instead of accounts it uses a single secret, `APP_ACCESS_KEY`. Every `/api` request except `/api/health` must send it in the `X-Access-Key` header, otherwise the API answers 401. The frontend shows an "Enter your access key" screen on a 401, stores the key in that browser (`localStorage`), and sends it on every request. If `APP_ACCESS_KEY` is not set (local development), the lock is off.
+
+**First deploy**
+
+1. Push the repo to GitHub.
+2. On [render.com](https://render.com): New → Blueprint → choose this repo. Render reads `render.yaml`.
+3. Fill in the secrets it asks for: `APP_ACCESS_KEY` (make up a long random one), `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `DATABASE_URL`, `RAPIDAPI_KEY`, `GEMINI_API_KEY` (same values as your `.env`).
+4. Wait for the build (about 5 minutes), open the `onrender.com` URL, enter the access key.
+
+After that, every push to `main` redeploys automatically.
+
+**Free plan notes.** The service sleeps after 15 minutes without requests; the next visit takes 30–60 seconds to wake it. The disk is not kept between deploys, which is fine because all data lives in Supabase. The in-memory embedding cache and interest fetch state reset on every wake-up.
+
+**Run the production image yourself** (needs Docker Desktop running):
+
+```powershell
+docker build -t job-hunt-agent .
+docker run --env-file .env -e APP_ACCESS_KEY=test -p 8000:8000 job-hunt-agent
+```
+
+---
+
 ## Design decisions
 
 - **Shared `jobs` table, per-user `user_job_tracking`.** A job is fetched and enriched once, however many users track it. Search cost scales with distinct interests, not with users.
@@ -489,7 +531,7 @@ The tests use dummy API keys and never call Supabase, JSearch or Gemini.
 Still open:
 
 1. **No notifier yet.** The 1-week and 1-day deadline alerts from the original plan are not implemented.
-2. **Single user, no login.** The app is meant for one person for now: `get_current_user_id()` returns `1`, and there is no login page. Ownership checks are already in every endpoint, so adding Supabase Auth later only changes that one function. Do not expose the backend to the internet before that.
+2. **Single user, no accounts.** The app is meant for one person for now: `get_current_user_id()` returns `1`, and the deployed app is protected by one shared access key rather than user accounts. Ownership checks are already in every endpoint, so adding Supabase Auth later only changes that one function. Anyone who has the access key has full access, so keep it secret and change it in Render if it leaks.
 3. **Free-text deadlines.** `application_deadline` is `text`. The calendar and the edit form only handle ISO `YYYY-MM-DD` dates, "ASAP" is shown when nothing is known, and sorting by deadline orders free text like "28 October" alphabetically. Converting it to a `date` column (with a separate raw-text column) would fix this and make the notifier much simpler.
 4. **Status default.** The column default is `not_applied`, but the app writes `Saved / Not Applied`. The fix is in `migrations/001_status_default.sql`; run it once in the Supabase SQL editor.
 5. **In-memory state in the API.** The embedding cache and the "fetch running / failed" state for interests live in the API process, so they reset when it restarts (an interrupted fetch then shows a **Fetch** button).
@@ -518,7 +560,7 @@ Done:
 3. **Authentication (when there is a second user):** Supabase Auth, then replace `get_current_user_id()`.
 4. **Ranking and recommendations:** score jobs against the CV so Explore can sort by "best match" instead of newest.
 5. **Better tailoring output:** export the tailored CV as a document, not just suggested bullets.
-6. **Deployment:** containerise the backend and host it (Railway or Fly.io) with the frontend on a static host, so there is a live demo link.
+6. **Public demo:** the live app is private (access key). A demo with sample data would make a shareable portfolio link.
 7. **More tests:** endpoint tests with a mocked Supabase client, and frontend tests.
 
 ---
