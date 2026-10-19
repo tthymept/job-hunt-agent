@@ -132,9 +132,27 @@ def load_job_description(path: str = JOB_DESCRIPTION_PATH) -> str:
 # ---------------------------------------------------------------------------
 # EMBEDDING + SCORING
 # ---------------------------------------------------------------------------
+EMBED_BATCH_SIZE = 100  # texts per embed_content call (the API's batch limit)
+
+# text -> vector. CV bullets are the same on every run, so after the first
+# "Generate" only the job description needs a new embedding. Lives for as
+# long as the API process does.
+_embedding_cache: dict[str, np.ndarray] = {}
+
+
+def embed_many(texts: list[str]) -> list[np.ndarray]:
+    """Embeds texts in batches, skipping any already in the cache."""
+    missing = list(dict.fromkeys(t for t in texts if t not in _embedding_cache))
+    for i in range(0, len(missing), EMBED_BATCH_SIZE):
+        batch = missing[i:i + EMBED_BATCH_SIZE]
+        response = client.models.embed_content(model=EMBED_MODEL, contents=batch)
+        for text, embedding in zip(batch, response.embeddings):
+            _embedding_cache[text] = np.array(embedding.values)
+    return [_embedding_cache[t] for t in texts]
+
+
 def embed(text: str) -> np.ndarray:
-    response = client.models.embed_content(model=EMBED_MODEL, contents=text)
-    return np.array(response.embeddings[0].values)
+    return embed_many([text])[0]
 
 
 def cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:
@@ -143,7 +161,7 @@ def cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:
 
 def score_bullets(bullets: list[str], jd_vector: np.ndarray) -> list[tuple[float, str]]:
     """Returns (score, bullet) pairs, sorted highest relevance first."""
-    scored = [(cosine_similarity(embed(b), jd_vector), b) for b in bullets]
+    scored = [(cosine_similarity(v, jd_vector), b) for v, b in zip(embed_many(bullets), bullets)]
     scored.sort(key=lambda pair: pair[0], reverse=True)
     return scored
 
@@ -236,6 +254,14 @@ def process_entry(entry: dict, jd_vector: np.ndarray, job_description: str) -> d
 # ---------------------------------------------------------------------------
 def tailor_cv(structured_cv: dict, job_description: str) -> dict:
     jd_vector = embed(job_description)
+    # Embed every bullet up front in as few calls as possible; the per-entry
+    # scoring below then reads them from the cache
+    embed_many([
+        b
+        for section in structured_cv.get("sections", [])
+        for entry in section.get("entries", [])
+        for b in entry.get("bullets", [])
+    ])
 
     tailored_sections = []
     for section in structured_cv.get("sections", []):

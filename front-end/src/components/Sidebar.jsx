@@ -1,8 +1,17 @@
 const NAV_ITEMS = [
-  { key: 'dashboard', label: '⬛ Dashboard' },
-  { key: 'explore', label: '🔍 Explore Jobs' },
-  { key: 'cv', label: '📄 My CV' },
+  { key: 'dashboard', icon: '⬛', label: 'Dashboard' },
+  { key: 'explore', icon: '🔍', label: 'Explore Jobs', short: 'Explore' },
+  { key: 'cv', icon: '📄', label: 'My CV' },
 ]
+
+function initials(name) {
+  return (name || '')
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map(part => part[0].toUpperCase())
+    .join('') || '?'
+}
 
 // Old version: one addEventListener on #nav that read data-view off
 // whichever button was clicked, then manually toggled .active classes
@@ -10,10 +19,10 @@ const NAV_ITEMS = [
 // Here: view is just a piece of state. Clicking a button calls
 // setView(), and the "active" class + which page shows are both
 // derived from that one value - no manual class-toggling anywhere.
-export default function Sidebar({ view, setView }) {
+export default function Sidebar({ view, setView, me }) {
   return (
     <aside className="sidebar">
-      <div className="brand"><span className="mark">💼</span> Job Hunt Pipeline</div>
+      <div className="brand"><span className="mark">💼</span> <span className="brand-name">Job Hunt Pipeline</span></div>
       <nav className="nav">
         {NAV_ITEMS.map(item => (
           <button
@@ -21,15 +30,21 @@ export default function Sidebar({ view, setView }) {
             className={view === item.key ? 'active' : ''}
             onClick={() => setView(item.key)}
           >
-            {item.label}
+            <span className="nav-icon">{item.icon}</span>
+            <span className="nav-label">{item.label}</span>
+            <span className="nav-short">{item.short || item.label}</span>
           </button>
         ))}
       </nav>
       <div className="tip"><b>Pipeline tip</b>Keep deadlines current to see them in your calendar.</div>
-      <div className="who">
-        <span className="dot">AT</span>
-        <div>Alex Tan<br/><span style={{ color: 'var(--sub)', fontSize: '11.5px' }}>alex.tan@email.com</span></div>
-      </div>
+      {me && (
+        <div className="who">
+          <span className="dot">{initials(me.name)}</span>
+          <div className="who-text">
+            {me.name}<br/><span style={{ color: 'var(--sub)', fontSize: '11.5px' }}>{me.email}</span>
+          </div>
+        </div>
+      )}
     </aside>
   )
 }

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 
-const API = 'http://localhost:8000'
+import { API } from '../api'
+import PdfViewer from './PdfViewer'
 
 function formatDate(iso) {
   if (!iso) return ''
@@ -89,14 +90,14 @@ export default function CVPage() {
       >
         <div className="ic">⬆</div>
         <div>
-          <strong>{uploading ? 'Uploading and reading your CV…' : 'Drop your CV here or browse files'}</strong>
+          <strong>{uploading ? 'Uploading and reading your CV…' : <>Drop your CV here or <u>browse files</u></>}</strong>
         </div>
         <div style={{ fontSize: 12, marginTop: 4 }}>PDF · Maximum 10 MB</div>
         <input
           id="fileInput"
           type="file"
           style={{ display: 'none' }}
-          accept=".pdf"
+          accept="application/pdf,.pdf"
           disabled={uploading}
           onChange={handleFileChange}
         />
@@ -123,18 +124,23 @@ export default function CVPage() {
         </div>
       )}
 
+      {hasCv && (
+        <div className="card pdf-card">
+          {/* updatedAt in the URL makes the browser fetch the new file after a replace */}
+          <PdfViewer url={`${API}/api/cv/file?v=${encodeURIComponent(cv.updatedAt || '')}`} />
+        </div>
+      )}
+
       {hasCv && sections.length === 0 && (
-        <div className="card" style={{ padding: 30, textAlign: 'center', color: 'var(--sub)', fontSize: 13.5 }}>
-          Your CV is saved, but its text hasn't been read yet. Replace it to try again.
+        <div className="card" style={{ padding: 20, textAlign: 'center', color: 'var(--sub)', fontSize: 13.5, marginTop: 16 }}>
+          Your CV is saved, but its text hasn't been read yet, so tailoring won't work. Replace it to try again.
         </div>
       )}
 
       {hasCv && sections.length > 0 && (
-        <>
-          <p style={{ color: 'var(--sub)', fontSize: 12.5, margin: '0 0 10px' }}>
-            Text read from your CV. This is what the tailor agent works from.
-          </p>
-          <div className="card" style={{ background: 'var(--row-hover)', padding: 30 }}>
+        <details className="cv-text">
+          <summary>Text read from your CV (what the tailor agent works from)</summary>
+          <div className="card" style={{ background: 'var(--row-hover)' }}>
             <div className="resume">
               {sections.map((s, i) => (
                 <div key={i}>
@@ -159,7 +165,7 @@ export default function CVPage() {
               ))}
             </div>
           </div>
-        </>
+        </details>
       )}
     </section>
   )

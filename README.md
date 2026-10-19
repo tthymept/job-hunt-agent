@@ -46,14 +46,16 @@ Built as a learning project (React + FastAPI + Supabase) and a portfolio piece.
 | Search agent (JSearch to Postgres, dedupe by apply link) | Working |
 | LLM enrichment (batched, retry up to 5 times) | Working |
 | Daily fetch + stale job cleanup + fetch logging | Working, runs from GitHub Actions every 2 days |
-| Tailor agent (embeddings + generation) | Working, generates per-entry suggestions |
-| CV upload + structured extraction | Working (PDF only, max 10 MB) |
+| Tailor agent (embeddings + generation) | Working, generates per-entry suggestions; bullet embeddings are batched and cached |
+| CV upload + structured extraction | Working (PDF only, max 10 MB); My CV shows the real PDF |
 | Tracker (add, status, untrack/retrack, edit, manual entry, add from URL) | Working |
 | Per-user edits on shared jobs (`overrides`) | Working |
 | Deadline calendar | Working (only for ISO dates) |
 | Notifier agent (email/bot alerts) | **Not built** |
-| Real authentication | **Not built.** `get_current_user_id()` returns `1` |
-| Managing search interests from the UI | **Not built.** Interests are added by running `jobs_manager.py` |
+| Real authentication | **Not built on purpose (single user for now).** `get_current_user_id()` returns `1`; every endpoint checks rows belong to that user |
+| Managing search interests from the UI | Working (Explore → Search interests): add, pause, resume, remove, retry a failed first fetch |
+| Phone and tablet layout | Working: icon rail on iPad, bottom tab bar and card rows on iPhone |
+| Tests | `pytest` unit tests for parsing, cleanup, URL safety and tailoring helpers, run in CI |
 | Deployment | **Not done.** Frontend and backend run locally |
 
 ---
@@ -111,7 +113,7 @@ Two separate flows share one database:
 
 | Layer | Choice |
 | --- | --- |
-| Frontend | React 18 + Vite 5 (plain CSS) |
+| Frontend | React 18 + Vite 5 (plain CSS), pdf.js for the CV preview |
 | Backend | FastAPI, Uvicorn, Pydantic |
 | Database | Supabase Postgres |
 | File storage | Supabase Storage (bucket `resumes`) |
@@ -130,16 +132,20 @@ Two separate flows share one database:
 ```
 job-hunt-agent/
 ├── .github/workflows/daily_fetch.yml   # cron job: runs run_daily_fetch.py
+├── .github/workflows/tests.yml         # runs pytest on every push
 ├── src/job_hunt_agent/
 │   └── api.py                          # FastAPI app (all endpoints)
 ├── front-end/
 │   ├── src/
-│   │   ├── App.jsx                     # top-level state + all fetch calls
+│   │   ├── App.jsx                     # top-level state + most fetch calls
+│   │   ├── api.js                      # backend base URL (VITE_API_URL, default: same origin)
 │   │   ├── components/
 │   │   │   ├── Sidebar.jsx             # navigation
 │   │   │   ├── Dashboard.jsx           # tracker table, URL bar, calendar
 │   │   │   ├── Explore.jsx             # browse/filter all jobs
-│   │   │   ├── CVPage.jsx              # upload master CV, view parsed structure
+│   │   │   ├── CVPage.jsx              # upload master CV, preview the PDF, view parsed text
+│   │   │   ├── PdfViewer.jsx           # renders every PDF page to a canvas with pdf.js
+│   │   │   ├── InterestsModal.jsx      # manage search interests
 │   │   │   ├── Drawer.jsx              # per-job panel: tailored bullets, uploads
 │   │   │   ├── JobDescription.jsx
 │   │   │   ├── JobFormModal.jsx        # manual add / edit job
@@ -154,8 +160,8 @@ job-hunt-agent/
 ├── run_daily_fetch.py                  # one-shot entry point for the scheduler
 ├── extract_agent.py                    # CV PDF -> structured JSON via Gemini
 ├── tailor_agent.py                     # embeddings + per-entry CV rewriting
-├── user_job_tracker.py                 # early standalone tracker helpers (superseded by api.py)
-├── debug_query.py / debug_query2.py    # experiments with JSearch query/country parameters
+├── migrations/                         # one-off SQL to run in the Supabase SQL editor
+├── tests/                              # pytest unit tests
 ├── pyproject.toml / uv.lock
 └── .env                                # secrets (git-ignored)
 ```
@@ -216,7 +222,7 @@ The prompt tells the model to copy text exactly and not rewrite anything. The re
 This is the retrieval step of the project. For one job description:
 
 1. Embed the job description once.
-2. For each CV entry, embed each bullet and compute **cosine similarity** against the job description.
+2. Embed every CV bullet in batched calls (up to 100 per request) and keep the vectors in an in-process cache, so after the first run only the job description needs a new embedding. Then score each bullet with **cosine similarity** against the job description.
 3. If an entry's best bullet scores below `ENTRY_RELEVANCE_THRESHOLD` (0.45), leave the entry untouched.
 4. Otherwise, take the bullets that clear the threshold, pick the **lowest-scoring of those (up to 4)** and ask Gemini to reword them. The reasoning: a bullet that already scores high already reads as relevant, while one that barely passes is relevant in substance but weakly worded for this job.
 5. The prompt forbids inventing facts, numbers or experience.
@@ -225,9 +231,9 @@ Output is the same sections/entries structure with `tailored_bullets`, `relevanc
 
 The tailor agent works on one entry at a time, so a prompt never mixes bullets from different jobs or projects.
 
-### 5. Tracker (`api.py`, with early version in `user_job_tracker.py`)
+### 5. Tracker (`api.py`)
 
-The tracker "agent" is now part of the API: adding a job, changing status, untracking and retracking, editing, manual entry and add-from-URL all live in `api.py`. `user_job_tracker.py` is the first standalone version and is no longer used by the app.
+The tracker "agent" is part of the API: adding a job, changing status, untracking and retracking, editing, manual entry and add-from-URL all live in `api.py`.
 
 ---
 
@@ -340,12 +346,14 @@ Files are served through signed URLs that expire after 1 hour.
 
 ## API reference
 
-Base URL: `http://localhost:8000`. All endpoints use `get_current_user_id()` (currently always `1`).
+Base URL: `http://localhost:8000` (the Vite dev server proxies `/api` to it). All endpoints use `get_current_user_id()` (currently always `1`), and every endpoint that takes a `tracking_id` or `interest_id` only touches rows that belong to that user.
 
 | Method | Path | Purpose |
 | --- | --- | --- |
 | GET | `/api/health` | Health check |
-| GET | `/api/explore-jobs` | Browse all jobs. Query params: `page`, `page_size`, `sort` (`relevance` = newest first, or `deadline`), `role`, `location` (`all`, `singapore`, `bangkok`), `posted_date` (`all`, `today`, `3days`, `week`, `month`). Returns `{jobs, total, page, page_size}` with a `trackState` per job. |
+| GET | `/api/me` | Name and email of the current user (shown in the sidebar) |
+| GET | `/api/explore-jobs` | Browse all jobs. Query params: `page`, `page_size` (max 100), `sort` (`relevance` = newest first, or `deadline`), `role` (title contains), `location` (any city or country name, or `all`), `posted_date` (`all`, `today`, `3days`, `week`, `month`). Filtering, sorting and paging run in Postgres. Returns `{jobs, total, page, page_size}` with a `trackState` per job. |
+| GET | `/api/explore-locations` | Location filter options: the city (or country) of each of your search interests |
 | GET | `/api/tracker` | The user's tracked jobs (excluding `Untracked`), with user edits merged in |
 | POST | `/api/tracker` | Add a job by `job_id`. Returns `added`, `retracked` or `already_tracked` |
 | PATCH | `/api/tracker/{id}/status` | Change status (`Untracked` removes it from the dashboard) |
@@ -355,7 +363,12 @@ Base URL: `http://localhost:8000`. All endpoints use `get_current_user_id()` (cu
 | POST | `/api/jobs/manual` | Create a job manually and track it |
 | POST | `/api/jobs/from-url` | Create a job from a pasted link (see below) |
 | GET | `/api/cv` | Master CV metadata, parsed structure and signed download URL |
+| GET | `/api/cv/file` | The master CV PDF itself, served by the API so the preview has no CORS or expiry issues |
 | POST | `/api/cv` | Upload master CV (PDF, max 10 MB), store it and extract its structure |
+| GET | `/api/interests` | Your search interests with `fetchState`: `done`, `running`, `failed` or `pending` |
+| POST | `/api/interests` | Add an interest; a new pair starts the deep backfill in the background |
+| PATCH | `/api/interests/{id}` | Pause or resume. Resuming an interest whose first fetch never finished (or failed) starts it again |
+| DELETE | `/api/interests/{id}` | Remove an interest (jobs already found stay) |
 
 ### Add job from URL: three tiers
 
@@ -372,11 +385,13 @@ Safety: because the server fetches whatever link it is given, `check_url_is_safe
 React + Vite single-page app with three views, switched by a `view` state in `App.jsx` (no router).
 
 - **Dashboard:** URL bar ("add job from link"), tracker table (status dropdown, duration, deadline, apply link, your upload), add/edit/untrack actions, and a monthly deadline calendar.
-- **Explore Jobs:** every job in the database with filters (role, location, posted date), sort (newest or deadline), pagination (20 per page), and an "Add to My Jobs" button that reflects whether you already track it.
-- **My CV:** upload the master CV, see file info and the parsed structure, download the file.
+- **Explore Jobs:** every job in the database with filters (role, location from your interests, posted date), sort (newest or deadline), pagination (20 per page), an "Add to My Jobs" button that reflects whether you already track it, and the **Search interests** manager.
+- **My CV:** upload the master CV, see the actual PDF (every page, rendered with pdf.js so it also scrolls on iPhone/iPad), download it, and expand "Text read from your CV" to check what the tailor agent works from.
 - **Drawer (per job):** the job description, tailored bullet suggestions grouped by CV entry, and upload/download of your own CV for that job.
 
-State and all `fetch` calls live in `App.jsx`; components receive data and handlers as props.
+State and most `fetch` calls live in `App.jsx`; components receive data and handlers as props. The backend base URL comes from `src/api.js`.
+
+**Phone and tablet:** at iPad widths (761–1100 px) the sidebar becomes an icon rail; on phones (760 px and below) it becomes a bottom tab bar, table rows turn into cards, and modals open as bottom sheets. Inputs use 16 px text on touch devices so iOS does not zoom in, and safe-area insets are respected when the app is added to the Home Screen.
 
 ---
 
@@ -428,18 +443,27 @@ npm install
 npm run dev
 ```
 
-Opens on `http://localhost:5173` (or 5174). Both ports are allowed by CORS. The frontend calls the backend at the hard-coded `http://localhost:8000`, so both servers must be running.
+Opens on `http://localhost:5173`. The Vite dev server proxies every `/api/...` request to `http://localhost:8000`, so both servers must be running. To call a backend somewhere else (for example after deploying), set `VITE_API_URL` in `front-end/.env.local`.
+
+**On your iPhone or iPad:** the dev server also listens on your local network. With the device on the same Wi-Fi, open the `Network:` address Vite prints (e.g. `http://192.168.1.20:5173`). Allow Node.js through Windows Firewall if asked. In Safari, Share → Add to Home Screen opens it full screen like an app.
 
 ### 4. Add a search interest and fetch jobs
 
-Edit the `ROLE` / `COUNTRY` / `CITY` values at the bottom of `jobs_manager.py`, then:
+Open **Explore Jobs → Search interests** and add a role and country (city optional). A new pair gets a one-time deep search in the background. To run one daily cycle by hand (what the cron job runs):
 
 ```powershell
-uv run python jobs_manager.py      # adds the interest and runs the deep backfill
-uv run python run_daily_fetch.py   # one daily cycle (what the cron job runs)
+uv run python run_daily_fetch.py
 ```
 
-### 5. Use it
+### 5. Tests
+
+```powershell
+uv run pytest -q
+```
+
+The tests use dummy API keys and never call Supabase, JSearch or Gemini.
+
+### 6. Use it
 
 1. Open **My CV** and upload your PDF. Wait for the structure to appear.
 2. Open **Explore Jobs** and add jobs to your tracker, or paste a link on the Dashboard.
@@ -462,33 +486,40 @@ uv run python run_daily_fetch.py   # one daily cycle (what the cron job runs)
 
 ## Known limitations and cleanup list
 
-Honest list of things that are rough or not finished:
+Still open:
 
 1. **No notifier yet.** The 1-week and 1-day deadline alerts from the original plan are not implemented.
-2. **No auth.** The user is hard-coded to `1`, and the sidebar still shows placeholder user details. Some endpoints (`PATCH /status`, `POST /upload`) look up a `tracking_id` without checking it belongs to the current user. That must be fixed before more than one real user exists.
-3. **Interests are not manageable from the UI.** They are added by running `jobs_manager.py`.
-4. **Explore filters run in Python.** `GET /api/explore-jobs` loads every job and filters, sorts and paginates in memory. Fine for a few thousand rows; move it into SQL (or Supabase query filters) as the table grows. Location filters only know Singapore and Bangkok.
-5. **Duplicate route in `api.py`.** `AddTrackerBody` and `POST /api/tracker` are defined twice; the second version (using `track_job_for_user`) is the cleaner one, so delete the first.
-6. **Free-text deadlines.** `application_deadline` is `text`. The calendar and the edit form only handle ISO `YYYY-MM-DD` dates, and "ASAP" is shown when nothing is known. Converting it to a `date` column (with a separate raw-text column) would also make the future notifier much simpler.
-7. **Status default mismatch.** The column default is `not_applied`, but the app writes `Saved / Not Applied`. Align one with the other.
-8. **Python version mismatch.** `pyproject.toml` requires Python `>=3.14`, while the GitHub workflow installs 3.12. Align them.
-9. **Per-bullet embedding calls.** The tailor agent embeds each bullet separately on every run, so it makes many API calls and can hit rate limits (the API returns a 502 with a retry message). Caching CV bullet embeddings per user would remove most of them.
-10. **No vector database.** Similarity is computed in memory with NumPy, which is enough for one CV. A vector store only becomes worthwhile with much larger corpora.
-11. **Leftover files.** `user_job_tracker.py`, `debug_query*.py` and the mock `initialJobs` in `front-end/src/data.js` are no longer needed by the app.
-12. **Hard-coded API URL** (`http://localhost:8000`) in several frontend files. Move it to a Vite env variable (`VITE_API_URL`) before deploying.
-13. **No tests.**
+2. **Single user, no login.** The app is meant for one person for now: `get_current_user_id()` returns `1`, and there is no login page. Ownership checks are already in every endpoint, so adding Supabase Auth later only changes that one function. Do not expose the backend to the internet before that.
+3. **Free-text deadlines.** `application_deadline` is `text`. The calendar and the edit form only handle ISO `YYYY-MM-DD` dates, "ASAP" is shown when nothing is known, and sorting by deadline orders free text like "28 October" alphabetically. Converting it to a `date` column (with a separate raw-text column) would fix this and make the notifier much simpler.
+4. **Status default.** The column default is `not_applied`, but the app writes `Saved / Not Applied`. The fix is in `migrations/001_status_default.sql`; run it once in the Supabase SQL editor.
+5. **In-memory state in the API.** The embedding cache and the "fetch running / failed" state for interests live in the API process, so they reset when it restarts (an interrupted fetch then shows a **Fetch** button).
+6. **No vector database.** Similarity is computed in memory with NumPy, which is enough for one CV. A vector store only becomes worthwhile with much larger corpora.
+7. **Placeholder buttons.** Export, Settings and Columns on the Dashboard do nothing yet.
+
+Done:
+
+- Interests are managed from the UI, including retrying a first fetch that failed or never ran.
+- Explore filters, sorting and pagination run in Postgres; the location filter covers every place in your interests.
+- Duplicate `POST /api/tracker` route removed.
+- Ownership checks added to `PATCH /status` and `POST /upload`.
+- The sidebar shows the real user from the `users` table.
+- Both workflows read the Python version from `.python-version` (3.14).
+- The tailor agent embeds bullets in batches and caches them.
+- Leftover files (`user_job_tracker.py`, `debug_query*.py`, mock data in `data.js`) removed.
+- API URL moved to `src/api.js` / `VITE_API_URL`, with a Vite proxy for local and phone use.
+- Unit tests and a CI workflow added.
 
 ---
 
 ## Roadmap
 
 1. **Notifier agent:** daily scheduled job that finds tracked jobs with deadlines in 7 days and 1 day (and status still before `Submitted`), then sends an email (Resend or SendGrid). Needs a real `date` deadline column and a "last alert sent" marker to avoid repeats.
-2. **Interests UI:** add, pause and remove search interests from the app, triggering backfill for new pairs.
-3. **Authentication:** Supabase Auth, then replace `get_current_user_id()` and add ownership checks to every endpoint.
+2. **Deadline as a date:** add a `date` column for deadlines (keeping the raw text) and use it in the calendar, sort and cleanup.
+3. **Authentication (when there is a second user):** Supabase Auth, then replace `get_current_user_id()`.
 4. **Ranking and recommendations:** score jobs against the CV so Explore can sort by "best match" instead of newest.
 5. **Better tailoring output:** export the tailored CV as a document, not just suggested bullets.
 6. **Deployment:** containerise the backend and host it (Railway or Fly.io) with the frontend on a static host, so there is a live demo link.
-7. **Tests and CI:** unit tests for parsing and cleanup logic, and a lint/test workflow.
+7. **More tests:** endpoint tests with a mocked Supabase client, and frontend tests.
 
 ---
 
@@ -507,3 +538,4 @@ The project grew in stages. Each stage is a working step that the next one built
 9. **Dashboard wiring.** Wired the Dashboard to `user_job_tracking` with status changes, per-job CV upload and bullet generation.
 10. **Tracker polish.** Added untrack/retrack, manual job entry, per-user edit overrides, and the My CV page for the master CV.
 11. **Add from URL.** Added three-tier link import (JSON-LD, Gemini, manual fallback) with SSRF protection.
+12. **Interests UI and cleanup.** Search interests managed from Explore, real PDF preview on My CV, phone and iPad layouts, Explore queries moved into SQL, batched and cached embeddings, ownership checks, leftover files removed, unit tests and CI.

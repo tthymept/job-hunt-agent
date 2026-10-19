@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react'
+import { API, JSON_HEADERS } from '../api'
 
-const API = 'http://localhost:8000'
-const JSON_HEADERS = { 'Content-Type': 'application/json' }
 
 function titleCase(text) {
   return (text || '').replace(/\b\w/g, c => c.toUpperCase())
@@ -9,7 +8,9 @@ function titleCase(text) {
 
 function describeStatus(interest) {
   if (interest.status === 'paused') return 'Paused'
-  if (!interest.backfilled) return 'Fetching jobs…'
+  if (interest.fetchState === 'running') return 'Fetching jobs…'
+  if (interest.fetchState === 'failed') return interest.fetchError || 'Fetch failed'
+  if (interest.fetchState === 'pending') return 'Not fetched yet'
   return 'Active'
 }
 
@@ -37,7 +38,7 @@ export default function InterestsModal({ open, onClose }) {
 
   // While any active interest is still backfilling, re-check every 5 seconds
   // so the "Fetching jobs…" label flips to "Active" on its own.
-  const fetching = interests.some(i => i.status === 'active' && !i.backfilled)
+  const fetching = interests.some(i => i.fetchState === 'running')
   useEffect(() => {
     if (!open || !fetching) return
     const timer = setInterval(loadInterests, 5000)
@@ -95,7 +96,7 @@ export default function InterestsModal({ open, onClose }) {
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-box" style={{ width: 560 }} onClick={e => e.stopPropagation()}>
+      <div className="modal-box wide" onClick={e => e.stopPropagation()}>
         <h3>Search interests</h3>
         <div className="sub">
           The scheduled fetch searches job boards for every active interest. A new one also gets a one-time deeper search.
@@ -117,7 +118,15 @@ export default function InterestsModal({ open, onClose }) {
                   {i.status === 'paused' ? (
                     <button className="btn sm" onClick={() => updateStatus(i.id, 'active')}>Resume</button>
                   ) : (
-                    <button className="btn sm" onClick={() => updateStatus(i.id, 'paused')}>Pause</button>
+                    <>
+                      {/* Setting it active again starts the first deep search */}
+                      {(i.fetchState === 'failed' || i.fetchState === 'pending') && (
+                        <button className="btn sm primary" onClick={() => updateStatus(i.id, 'active')}>
+                          {i.fetchState === 'failed' ? 'Retry' : 'Fetch'}
+                        </button>
+                      )}
+                      <button className="btn sm" onClick={() => updateStatus(i.id, 'paused')}>Pause</button>
+                    </>
                   )}
                   <button className="btn sm" onClick={() => removeInterest(i.id)}>Remove</button>
                 </div>

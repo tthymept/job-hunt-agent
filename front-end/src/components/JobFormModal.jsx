@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 
-const API = 'http://localhost:8000'
+import { API } from '../api'
 
 const EMPTY_FORM = {
   company: '', title: '', location: '', duration: '',

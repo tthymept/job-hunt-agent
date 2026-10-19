@@ -5,12 +5,13 @@ import Explore from './components/Explore'
 import CVPage from './components/CVPage'
 import Drawer from './components/Drawer'
 import JobFormModal from './components/JobFormModal'
+import { API } from './api'
 
 const EXPLORE_PAGE_SIZE = 20
-const API = 'http://localhost:8000'
 
 export default function App() {
   const [view, setView] = useState('dashboard')
+  const [me, setMe] = useState(null)
   const [jobs, setJobs] = useState([])
   const [drawerJob, setDrawerJob] = useState(null)
   const [generatingId, setGeneratingId] = useState(null)
@@ -34,6 +35,13 @@ export default function App() {
         return []
       })
   }
+
+  useEffect(() => {
+    fetch(`${API}/api/me`)
+      .then(res => res.json())
+      .then(setMe)
+      .catch(err => console.error('Failed to load user:', err))
+  }, [])
 
   // Refetches whenever Dashboard becomes the active tab - simplest way
   // to show jobs added from Explore without more complex cross-page sync.
@@ -142,7 +150,7 @@ export default function App() {
 
   return (
     <div className={`app${drawerJob ? ' drawer-open' : ''}`}>
-      <Sidebar view={view} setView={setView} />
+      <Sidebar view={view} setView={setView} me={me} />
 
       <main className="main">
         {view === 'dashboard' && (

@@ -153,6 +153,20 @@ def run_daily_fetch(conn) -> None:
                duration_seconds=round(time.time() - start, 2))
 
 
+def is_deadline_stale(deadline_str: str | None, cutoff: datetime) -> bool:
+    """True only when the free-text deadline parses to a date before cutoff.
+    Unparsable text ("rolling basis", "ASAP") is left alone rather than guessed at."""
+    if not deadline_str:
+        return False
+    try:
+        parsed = date_parser.parse(deadline_str, fuzzy=True)
+    except (ValueError, TypeError, OverflowError):
+        return False
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed < cutoff
+
+
 def cleanup_stale_jobs(conn) -> int:
     """
     Removes jobs that are stale by any of:
@@ -187,16 +201,7 @@ def cleanup_stale_jobs(conn) -> int:
     rows = cur.fetchall()
 
     cutoff = datetime.now(timezone.utc) - timedelta(weeks=1)
-    stale_ids = []
-    for job_id, deadline_str in rows:
-        try:
-            parsed = date_parser.parse(deadline_str, fuzzy=True)
-            if parsed.tzinfo is None:
-                parsed = parsed.replace(tzinfo=timezone.utc)
-            if parsed < cutoff:
-                stale_ids.append(job_id)
-        except (ValueError, TypeError, OverflowError):
-            continue  # couldn't parse this one -- leave it rather than guess
+    stale_ids = [job_id for job_id, deadline_str in rows if is_deadline_stale(deadline_str, cutoff)]
 
     if stale_ids:
         cur.execute("DELETE FROM jobs WHERE job_id = ANY(%s)", (stale_ids,))

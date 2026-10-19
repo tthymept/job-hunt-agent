@@ -140,7 +140,7 @@ export default function Dashboard({ jobs, onStatusChange, onOpenDrawer, onUpload
         </div>
       )}
       <div className="card tablewrap">
-        <table>
+        <table className="cards">
           <thead>
             <tr>
               <th>Status</th><th>Company</th><th>Job Title</th><th>Location</th><th>Duration</th>
@@ -150,7 +150,7 @@ export default function Dashboard({ jobs, onStatusChange, onOpenDrawer, onUpload
           <tbody>
             {visibleJobs.map(j => (
               <tr key={j.trackingId}>
-                <td>
+                <td className="c-full">
                   <select
                     className={`pill st-${ST_CLASS[j.status]}`}
                     value={j.status}
@@ -160,19 +160,26 @@ export default function Dashboard({ jobs, onStatusChange, onOpenDrawer, onUpload
                     <option value="Untracked" style={{ color: 'crimson' }}>🗑 Untrack</option>
                   </select>
                 </td>
-                <td>{j.co}</td>
-                <td className="job-title">{j.title}</td>
-                <td>{j.loc}</td>
-                <td>{j.dur}</td>
-                <td>{j.min}</td>
-                <td>{j.dl}</td>
-                <td><a className="applink" href={j.applyLink} target="_blank" rel="noreferrer">Open ↗</a></td>
-                <td className="cvcell"><UploadCell job={j} onUploadCv={onUploadCv} /></td>
-                <td><button className="chev" onClick={() => onOpenDrawer(j)}>›</button></td>
+                <td className="c-co">{j.co}</td>
+                <td className="job-title c-title">{j.title}</td>
+                <td data-label="Location">{j.loc}</td>
+                <td data-label="Duration">{j.dur}</td>
+                <td data-label="Min. duration">{j.min}</td>
+                <td data-label="Deadline">{j.dl}</td>
+                <td data-label="Apply">
+                  {j.applyLink ? <a className="applink" href={j.applyLink} target="_blank" rel="noreferrer">Open ↗</a> : '—'}
+                </td>
+                <td className="cvcell" data-label="My upload"><UploadCell job={j} onUploadCv={onUploadCv} /></td>
+                <td className="c-open">
+                  <button className="chev" aria-label="Show details" onClick={() => onOpenDrawer(j)}>›</button>
+                </td>
               </tr>
             ))}
             {jobs.length > 0 && visibleJobs.length === 0 && (
-              <tr><td colSpan={10}>No jobs match these filters.</td></tr>
+              <tr className="empty-row"><td colSpan={10}>No jobs match these filters.</td></tr>
+            )}
+            {jobs.length === 0 && (
+              <tr className="empty-row"><td colSpan={10}>No tracked jobs yet. Paste a link above or add jobs from Explore.</td></tr>
             )}
           </tbody>
         </table>

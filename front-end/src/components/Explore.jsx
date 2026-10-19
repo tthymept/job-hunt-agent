@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import InterestsModal from './InterestsModal'
+import { API } from '../api'
 
 function getPageNumbers(current, total) {
   if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1)
@@ -30,6 +31,17 @@ export default function Explore({ jobs, onAdd, page, pageSize, total, onPageChan
   const [draftLocation, setDraftLocation] = useState(filters.location)
   const [draftPostedDate, setDraftPostedDate] = useState(filters.postedDate)
   const [interestsOpen, setInterestsOpen] = useState(false)
+  // Location options are the places in your search interests: [{ value, label }]
+  const [locations, setLocations] = useState([])
+
+  function loadLocations() {
+    fetch(`${API}/api/explore-locations`)
+      .then(res => res.json())
+      .then(setLocations)
+      .catch(err => console.error('Failed to load locations:', err))
+  }
+
+  useEffect(loadLocations, [])
 
   function handleSearch() {
     onApplyFilters({ role: draftRole, location: draftLocation, postedDate: draftPostedDate })
@@ -37,6 +49,7 @@ export default function Explore({ jobs, onAdd, page, pageSize, total, onPageChan
 
   function handleCloseInterests() {
     setInterestsOpen(false)
+    loadLocations()
     // A fresh filters object makes App refetch, so jobs from a finished backfill show up
     onApplyFilters({ ...filters })
   }
@@ -52,7 +65,7 @@ export default function Explore({ jobs, onAdd, page, pageSize, total, onPageChan
       </div>
 
       <div className="card filterbar">
-        <div className="f">
+        <div className="f f-grow">
           <label>Role</label>
           <input
             type="search"
@@ -60,15 +73,13 @@ export default function Explore({ jobs, onAdd, page, pageSize, total, onPageChan
             value={draftRole}
             onChange={e => setDraftRole(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && handleSearch()}
-            style={{ width: 220 }}
           />
         </div>
         <div className="f">
           <label>Location</label>
           <select value={draftLocation} onChange={e => setDraftLocation(e.target.value)}>
             <option value="all">All locations</option>
-            <option value="singapore">Singapore</option>
-            <option value="bangkok">Bangkok</option>
+            {locations.map(l => <option key={l.value} value={l.value}>{l.label}</option>)}
           </select>
         </div>
         <div className="f">
@@ -85,7 +96,7 @@ export default function Explore({ jobs, onAdd, page, pageSize, total, onPageChan
             ))}
           </div>
         </div>
-        <div className="f" style={{ justifyContent: 'flex-end' }}>
+        <div className="f f-submit" style={{ justifyContent: 'flex-end' }}>
           <label>&nbsp;</label>
           <button className="btn primary" onClick={handleSearch}>🔍 Search</button>
         </div>
@@ -100,7 +111,7 @@ export default function Explore({ jobs, onAdd, page, pageSize, total, onPageChan
       </div>
 
       <div className="card tablewrap">
-        <table>
+        <table className="cards">
           <thead>
             <tr>
               <th></th><th>Company</th><th>Job Title</th><th>Location</th><th>Duration</th>
@@ -110,7 +121,7 @@ export default function Explore({ jobs, onAdd, page, pageSize, total, onPageChan
           <tbody>
             {jobs.map((j, i) => (
               <tr key={j.jobId}>
-                <td>
+                <td className="c-full">
                   {j.trackState === 'added' ? (
                     <button className="addbtn added" disabled>
                       <span className="icon">✓</span><span className="label">Added</span>
@@ -125,14 +136,23 @@ export default function Explore({ jobs, onAdd, page, pageSize, total, onPageChan
                     </button>
                   )}
                 </td>
-                <td>{j.co}</td><td className="job-title">{j.title}</td><td>{j.loc}</td>
-                <td>{j.dur}</td><td>{j.min}</td><td>{j.dl}</td>
-                <td><a className="applink" href={j.applyLink} target="_blank" rel="noreferrer">Open ↗</a></td>
-                <td>{j.posted}</td>
-                <td><span className="badge">{j.src}</span></td>
-                <td><button className="chev" onClick={() => onOpenDrawer({ ...j, readOnly: true })}>›</button></td>
+                <td className="c-co">{j.co}</td>
+                <td className="job-title c-title">{j.title}</td>
+                <td data-label="Location">{j.loc}</td>
+                <td data-label="Duration">{j.dur}</td>
+                <td data-label="Min. duration">{j.min}</td>
+                <td data-label="Deadline">{j.dl}</td>
+                <td data-label="Apply"><a className="applink" href={j.applyLink} target="_blank" rel="noreferrer">Open ↗</a></td>
+                <td data-label="Posted">{j.posted}</td>
+                <td data-label="Source"><span className="badge">{j.src}</span></td>
+                <td className="c-open">
+                  <button className="chev" aria-label="Show details" onClick={() => onOpenDrawer({ ...j, readOnly: true })}>›</button>
+                </td>
               </tr>
             ))}
+            {jobs.length === 0 && (
+              <tr className="empty-row"><td colSpan={11}>No jobs match these filters.</td></tr>
+            )}
           </tbody>
         </table>
       </div>

@@ -13,7 +13,7 @@ from datetime import datetime, timedelta, timezone
 import requests
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, UploadFile, File
+from fastapi import FastAPI, HTTPException, UploadFile, File, BackgroundTasks, Response
 from fastapi.middleware.cors import CORSMiddleware
 from google import genai
 from google.genai import types
@@ -21,11 +21,15 @@ from pydantic import BaseModel
 from supabase import create_client, Client
 from extract_agent import extract_cv_structure
 from tailor_agent import tailor_cv
+import psycopg2
+import pycountry
+from jobs_manager import add_interest, backfill_new_pair
 
 load_dotenv()
 
 SUPABASE_URL = os.environ["SUPABASE_URL"]
 SUPABASE_KEY = os.environ["SUPABASE_SERVICE_KEY"]
+DATABASE_URL = os.environ["DATABASE_URL"]
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 gemini_client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
@@ -78,6 +82,13 @@ def get_current_user_id() -> int:
     # this one function - nothing else needs to move.
     return 1
 
+@app.get("/api/me")
+def get_me():
+    uid = get_current_user_id()
+    rows = supabase.table("users").select("name, email").eq("user_id", uid).execute().data
+    row = rows[0] if rows else {}
+    return {"name": row.get("name") or "", "email": row.get("email") or ""}
+
 
 # ---------- Explore Jobs ----------
 
@@ -102,36 +113,19 @@ def reshape_job(raw: dict, index: int, tracked_status: dict) -> dict:
 
 POSTED_DATE_DAYS = {"today": 1, "3days": 3, "week": 7, "month": 30}
 
-def passes_posted_date(row: dict, posted_date: str) -> bool:
-    if posted_date not in POSTED_DATE_DAYS:
-        return True
-    posted_str = row.get("job_posted_at_datetime_utc")
-    if not posted_str:
-        return True
+def location_filter(location: str) -> str | None:
+    """PostgREST `or` expression for a location name: the city contains it,
+    or (when it is a country name) the country code matches."""
+    # Only letters and spaces, so the value can't break the or=(...) syntax
+    clean = re.sub(r"[^a-z ]", "", (location or "").lower()).strip()
+    if not clean or clean == "all":
+        return None
+    parts = [f'job_city.ilike."*{clean}*"']
     try:
-        posted_dt = datetime.fromisoformat(posted_str)
-    except ValueError:
-        return True
-    if posted_dt.tzinfo is None:
-        posted_dt = posted_dt.replace(tzinfo=timezone.utc)
-    cutoff = datetime.now(timezone.utc) - timedelta(days=POSTED_DATE_DAYS[posted_date])
-    return posted_dt >= cutoff
-
-def passes_location(row: dict, location: str) -> bool:
-    if location in ("", "all"):
-        return True
-    city = (row.get("job_city") or "").lower()
-    country = (row.get("job_country") or "").lower()
-    if location == "singapore":
-        return "singapore" in city or country == "sg"
-    if location == "bangkok":
-        return "bangkok" in city or country == "th"
-    return True
-
-def passes_role(row: dict, role: str) -> bool:
-    if not role:
-        return True
-    return role.lower() in (row.get("job_title") or "").lower()
+        parts.append(f"job_country.eq.{pycountry.countries.lookup(clean).alpha_2}")
+    except LookupError:
+        pass
+    return ",".join(parts)
 
 @app.get("/api/explore-jobs")
 def get_explore_jobs(
@@ -143,30 +137,49 @@ def get_explore_jobs(
     posted_date: str = "all",
 ):
     uid = get_current_user_id()
+    page = max(page, 1)
+    page_size = min(max(page_size, 1), 100)
     tracked_response = supabase.table("user_job_tracking").select("job_id, status").eq("user_id", uid).execute()
     tracked_status = {row["job_id"]: row["status"] for row in (tracked_response.data or [])}
 
-    response = supabase.table("jobs").select("*").execute()
-    rows = [r for r in (response.data or []) if not str(r.get("job_id", "")).startswith("manual-")]
-
-    rows = [
-        r for r in rows
-        if passes_role(r, role) and passes_location(r, location) and passes_posted_date(r, posted_date)
-    ]
+    # Filtering, sorting and paging all happen in Postgres, so only one page of rows comes back
+    query = supabase.table("jobs").select("*", count="exact").not_.like("job_id", "manual-%")
+    if role.strip():
+        query = query.ilike("job_title", f"%{role.strip()}%")
+    loc = location_filter(location)
+    if loc:
+        query = query.or_(loc)
+    if posted_date in POSTED_DATE_DAYS:
+        cutoff = datetime.now(timezone.utc) - timedelta(days=POSTED_DATE_DAYS[posted_date])
+        query = query.gte("job_posted_at_datetime_utc", cutoff.isoformat())
 
     if sort == "deadline":
-        rows.sort(key=lambda r: (
-            r.get("application_deadline") is None and r.get("job_offer_expiration_datetime_utc") is None,
-            r.get("application_deadline") or r.get("job_offer_expiration_datetime_utc") or ""
-        ))
+        query = (
+            query.order("application_deadline", nullsfirst=False)
+            .order("job_offer_expiration_datetime_utc", nullsfirst=False)
+        )
     else:
-        rows.sort(key=lambda r: r.get("job_posted_at_datetime_utc") or "", reverse=True)
+        query = query.order("job_posted_at_datetime_utc", desc=True, nullsfirst=False)
 
-    total = len(rows)
     start = (page - 1) * page_size
-    page_rows = rows[start:start + page_size]
-    jobs = [reshape_job(row, start + i, tracked_status) for i, row in enumerate(page_rows)]
-    return {"jobs": jobs, "total": total, "page": page, "page_size": page_size}
+    response = query.range(start, start + page_size - 1).execute()
+    jobs = [reshape_job(row, start + i, tracked_status) for i, row in enumerate(response.data or [])]
+    return {"jobs": jobs, "total": response.count or 0, "page": page, "page_size": page_size}
+
+@app.get("/api/explore-locations")
+def get_explore_locations():
+    # The location filter offers the places you search in: each interest's city, or its country
+    uid = get_current_user_id()
+    rows = (
+        supabase.table("job_interests")
+        .select("city, country")
+        .eq("user_id", uid)
+        .neq("status", "removed")
+        .execute()
+        .data
+    ) or []
+    places = {(r["city"] or r["country"]).lower() for r in rows if r["city"] or r["country"]}
+    return [{"value": p, "label": p.title()} for p in sorted(places)]
 
 
 # ---------- Dashboard / Tracker ----------
@@ -217,44 +230,18 @@ def get_tracker():
     )
     return [reshape_tracker_row(row) for row in (response.data or [])]
 
-class AddTrackerBody(BaseModel):
-    job_id: str
-
-@app.post("/api/tracker")
-def add_to_tracker(body: AddTrackerBody):
-    uid = get_current_user_id()
-    existing = (
-        supabase.table("user_job_tracking")
-        .select("tracking_id, status")
-        .eq("user_id", uid)
-        .eq("job_id", body.job_id)
-        .execute()
-    )
-    if existing.data:
-        row = existing.data[0]
-        if row["status"] == "Untracked":
-            supabase.table("user_job_tracking").update({
-                "status": "Saved / Not Applied",
-                "status_updated_at": datetime.now(timezone.utc).isoformat(),
-            }).eq("tracking_id", row["tracking_id"]).execute()
-            return {"status": "retracked"}
-        return {"status": "already_tracked"}
-    supabase.table("user_job_tracking").insert({
-        "user_id": uid,
-        "job_id": body.job_id,
-        "status": "Saved / Not Applied",
-    }).execute()
-    return {"status": "added"}
-
 class StatusBody(BaseModel):
     status: str
 
 @app.patch("/api/tracker/{tracking_id}/status")
 def update_status(tracking_id: int, body: StatusBody):
-    supabase.table("user_job_tracking").update({
+    uid = get_current_user_id()
+    response = supabase.table("user_job_tracking").update({
         "status": body.status,
         "status_updated_at": datetime.now(timezone.utc).isoformat(),
-    }).eq("tracking_id", tracking_id).execute()
+    }).eq("tracking_id", tracking_id).eq("user_id", uid).execute()
+    if not response.data:
+        raise HTTPException(status_code=404, detail="Tracked job not found.")
     return {"status": "ok"}
 
 # Wire CV
@@ -292,7 +279,7 @@ def generate_bullets(tracking_id: int):
         print(f"Tailoring failed: {e}")
         raise HTTPException(status_code=502, detail="The tailor agent failed (it may be rate limited). Try again in a minute.")
 
-    supabase.table("user_job_tracking").update({"tailored_cv": json.dumps(tailored)}).eq("tracking_id", tracking_id).execute()
+    supabase.table("user_job_tracking").update({"tailored_cv": json.dumps(tailored)}).eq("tracking_id", tracking_id).eq("user_id", uid).execute()
     return {"bullets": tailored_groups(tailored)}
 
 #---
@@ -300,19 +287,22 @@ def generate_bullets(tracking_id: int):
 @app.post("/api/tracker/{tracking_id}/upload")
 async def upload_my_cv(tracking_id: int, file: UploadFile = File(...)):
     uid = get_current_user_id()
-    row = (
+    rows = (
         supabase.table("user_job_tracking")
         .select("job_id")
         .eq("tracking_id", tracking_id)
-        .single()
+        .eq("user_id", uid)
         .execute()
+        .data
     )
-    job_id = row.data["job_id"]
+    if not rows:
+        raise HTTPException(status_code=404, detail="Tracked job not found.")
+    job_id = rows[0]["job_id"]
     ext = file.filename.rsplit(".", 1)[-1] if "." in file.filename else "pdf"
     path = f"{uid}/tailored/{job_id}.{ext}"
     contents = await file.read()
     supabase.storage.from_("resumes").upload(path, contents, {"content-type": file.content_type, "upsert": "true"})
-    supabase.table("user_job_tracking").update({"my_upload_path": path}).eq("tracking_id", tracking_id).execute()
+    supabase.table("user_job_tracking").update({"my_upload_path": path}).eq("tracking_id", tracking_id).eq("user_id", uid).execute()
     return {"status": "uploaded", "path": path}
 
 def track_job_for_user(uid: int, job_id: str) -> str:
@@ -731,6 +721,27 @@ def get_cv():
     return cv_payload(get_current_user_id())
 
 
+@app.get("/api/cv/file")
+def get_cv_file():
+    # The PDF itself, served through the API (same origin as the app) so the
+    # My CV page can render it with pdf.js without CORS or signed-URL expiry
+    uid = get_current_user_id()
+    rows = supabase.table("users").select("resume_path").eq("user_id", uid).execute().data
+    path = rows[0].get("resume_path") if rows else None
+    if not path:
+        raise HTTPException(status_code=404, detail="No CV uploaded yet.")
+    try:
+        contents = supabase.storage.from_(RESUME_BUCKET).download(path)
+    except Exception as e:
+        print(f"CV download failed: {e}")
+        raise HTTPException(status_code=502, detail="Couldn't load your CV from storage.")
+    return Response(
+        content=contents,
+        media_type="application/pdf",
+        headers={"Content-Disposition": 'inline; filename="cv.pdf"', "Cache-Control": "no-store"},
+    )
+
+
 @app.post("/api/cv")
 def upload_master_cv(file: UploadFile = File(...)):
     # Plain def (not async) so the slow Gemini call below runs in a worker thread
@@ -768,3 +779,147 @@ def upload_master_cv(file: UploadFile = File(...)):
     if warning:
         payload["warning"] = warning
     return payload
+
+
+
+# ---------- Search interests ----------
+
+class InterestBody(BaseModel):
+    role: str
+    country: str
+    city: str | None = None
+
+class InterestStatusBody(BaseModel):
+    status: str
+
+# Backfills in progress and the ones that failed, keyed by (role, country, city)
+# as stored in job_interests (lowercase). Kept in memory: after a server restart
+# a never-finished backfill simply shows as "not fetched yet" with a Fetch button.
+backfills_running: set[tuple] = set()
+backfill_errors: dict[tuple, str] = {}
+
+def pair_key(role: str, country: str, city: str | None) -> tuple:
+    return (role.strip().lower(), country.strip().lower(), city.strip().lower() if city else None)
+
+def run_backfill(role: str, country: str, city: str | None):
+    # Runs after the response has been sent. It opens its own connection
+    # because the request is already finished by the time this executes.
+    key = pair_key(role, country, city)
+    conn = psycopg2.connect(DATABASE_URL)
+    try:
+        backfill_new_pair(role, country, city, conn)
+        backfill_errors.pop(key, None)
+    except Exception as e:
+        print(f"Backfill failed for {role} / {city} / {country}: {e}")
+        backfill_errors[key] = "The job search failed. Try again in a few minutes."
+    finally:
+        backfills_running.discard(key)
+        conn.close()
+
+def schedule_backfill(background_tasks: BackgroundTasks, role: str, country: str, city: str | None) -> bool:
+    key = pair_key(role, country, city)
+    if key in backfills_running:
+        return False
+    backfills_running.add(key)
+    backfill_errors.pop(key, None)
+    background_tasks.add_task(run_backfill, role, country, city)
+    return True
+
+def fetch_state(r: dict) -> str:
+    """done | running | failed | pending (never fetched and nothing running)."""
+    if r["backfilled"]:
+        return "done"
+    key = pair_key(r["role"], r["country"], r["city"])
+    if key in backfills_running:
+        return "running"
+    if key in backfill_errors:
+        return "failed"
+    return "pending"
+
+@app.get("/api/interests")
+def list_interests():
+    uid = get_current_user_id()
+    response = (
+        supabase.table("job_interests")
+        .select("interest_id, role, country, city, status, backfilled, last_fetched_at")
+        .eq("user_id", uid)
+        .neq("status", "removed")
+        .order("created_at")
+        .execute()
+    )
+    return [
+        {
+            "id": r["interest_id"],
+            "role": r["role"],
+            "country": r["country"],
+            "city": r["city"],
+            "status": r["status"],
+            "backfilled": r["backfilled"],
+            "fetchState": fetch_state(r),
+            "fetchError": backfill_errors.get(pair_key(r["role"], r["country"], r["city"])),
+            "lastFetchedAt": r["last_fetched_at"],
+        }
+        for r in (response.data or [])
+    ]
+
+@app.post("/api/interests")
+def create_interest(body: InterestBody, background_tasks: BackgroundTasks):
+    uid = get_current_user_id()
+    role = body.role.strip()
+    country = body.country.strip()
+    city = (body.city or "").strip() or None
+
+    if not role or not country:
+        raise HTTPException(status_code=422, detail="Role and country are required.")
+    try:
+        pycountry.countries.lookup(country)
+    except LookupError:
+        raise HTTPException(
+            status_code=422,
+            detail=f"'{country}' isn't a country name I recognise. Try something like Singapore or Thailand.",
+        )
+
+    conn = psycopg2.connect(DATABASE_URL)
+    try:
+        result = add_interest(uid, role, country, city, conn)
+    finally:
+        conn.close()
+
+    backfilling = result["pair_is_new"] and schedule_backfill(background_tasks, role, country, city)
+    return {"status": "added", "backfilling": backfilling}
+
+@app.patch("/api/interests/{interest_id}")
+def update_interest_status(interest_id: int, body: InterestStatusBody, background_tasks: BackgroundTasks):
+    uid = get_current_user_id()
+    if body.status not in ("active", "paused"):
+        raise HTTPException(status_code=422, detail="Status must be 'active' or 'paused'.")
+    response = (
+        supabase.table("job_interests")
+        .update({"status": body.status})
+        .eq("interest_id", interest_id)
+        .eq("user_id", uid)
+        .execute()
+    )
+    if not response.data:
+        raise HTTPException(status_code=404, detail="Interest not found.")
+    # Activating an interest that never got its first deep search (it was paused
+    # before it ran, or the run failed) starts that search now. This is also the retry.
+    r = response.data[0]
+    backfilling = False
+    if body.status == "active" and not r["backfilled"]:
+        backfilling = schedule_backfill(background_tasks, r["role"], r["country"], r["city"])
+    return {"status": body.status, "backfilling": backfilling}
+
+@app.delete("/api/interests/{interest_id}")
+def remove_interest_endpoint(interest_id: int):
+    uid = get_current_user_id()
+    response = (
+        supabase.table("job_interests")
+        .update({"status": "removed"})
+        .eq("interest_id", interest_id)
+        .eq("user_id", uid)
+        .execute()
+    )
+    if not response.data:
+        raise HTTPException(status_code=404, detail="Interest not found.")
+    return {"status": "removed"}
