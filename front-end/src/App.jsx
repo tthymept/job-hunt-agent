@@ -6,6 +6,7 @@ import CVPage from './components/CVPage'
 import Drawer from './components/Drawer'
 import JobFormModal from './components/JobFormModal'
 import AccessKeyGate from './components/AccessKeyGate'
+import LogoutModal from './components/LogoutModal'
 import { apiFetch, readJson, isGuest, blockedForGuest } from './api'
 
 const EXPLORE_PAGE_SIZE = 20
@@ -15,6 +16,7 @@ export default function App() {
   const [me, setMe] = useState(null)
   const [locked, setLocked] = useState(false) // true when the server rejected the access key
   const [guestBlocked, setGuestBlocked] = useState(false) // a guest tried to change something
+  const [logoutOpen, setLogoutOpen] = useState(false)
   const [jobs, setJobs] = useState([])
   const [drawerJob, setDrawerJob] = useState(null)
   const [generatingId, setGeneratingId] = useState(null)
@@ -171,7 +173,7 @@ export default function App() {
 
   return (
     <div className={`app${drawerJob ? ' drawer-open' : ''}`}>
-      <Sidebar view={view} setView={setView} me={me} guest={isGuest()} onUnlock={() => setGuestBlocked(true)} />
+      <Sidebar view={view} setView={setView} me={me} guest={isGuest()} onUnlock={() => setGuestBlocked(true)} onLogout={() => setLogoutOpen(true)} />
 
       <main className="main">
         {view === 'dashboard' && (
@@ -227,6 +229,7 @@ export default function App() {
       />
 
       {guestBlocked && <AccessKeyGate blocked onClose={() => setGuestBlocked(false)} />}
+      {logoutOpen && <LogoutModal guest={isGuest()} onClose={() => setLogoutOpen(false)} />}
     </div>
   )
 }

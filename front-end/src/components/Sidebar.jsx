@@ -19,7 +19,7 @@ function initials(name) {
 // Here: view is just a piece of state. Clicking a button calls
 // setView(), and the "active" class + which page shows are both
 // derived from that one value - no manual class-toggling anywhere.
-export default function Sidebar({ view, setView, me, guest, onUnlock }) {
+export default function Sidebar({ view, setView, me, guest, onUnlock, onLogout }) {
   return (
     <aside className="sidebar">
       <div className="brand"><span className="mark">💼</span> <span className="brand-name">Job Hunt Pipeline</span></div>
@@ -45,12 +45,12 @@ export default function Sidebar({ view, setView, me, guest, onUnlock }) {
         <div className="tip"><b>Pipeline tip</b>Keep deadlines current to see them in your calendar.</div>
       )}
       {me && (
-        <div className="who">
+        <button className="who" title="Log out" onClick={onLogout}>
           <span className="dot">{initials(me.name)}</span>
           <div className="who-text">
             {me.name}<br/><span style={{ color: 'var(--sub)', fontSize: '11.5px' }}>{me.email}</span>
           </div>
-        </div>
+        </button>
       )}
     </aside>
   )

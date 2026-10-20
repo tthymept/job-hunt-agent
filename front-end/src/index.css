@@ -40,7 +40,8 @@ body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,system-ui
 .nav-short{display:none;}
 .tip{background:var(--accent-weak);border-radius:10px;padding:12px;font-size:12.5px;color:var(--sub);line-height:1.5;}
 .tip b{color:var(--text);display:block;margin-bottom:3px;}
-.who{margin-top:auto;display:flex;align-items:center;gap:8px;font-size:13px;}
+.who{all:unset;cursor:pointer;margin-top:auto;display:flex;align-items:center;gap:8px;font-size:13px;padding:6px;margin-left:-6px;border-radius:8px;}
+.who:hover{background:var(--row-hover);}
 .who .dot{width:26px;height:26px;border-radius:50%;background:var(--text);color:var(--bg);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;}
 .main{flex:1;padding:calc(28px + var(--safe-top)) 32px 28px;min-width:0;overflow-x:hidden;}
 .pagehead{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px;gap:12px;flex-wrap:wrap;}
@@ -217,7 +218,8 @@ th.cvhead,td.cvcell{text-align:center;}
 @media (max-width:760px){
   .sidebar{position:fixed;left:0;bottom:0;top:auto;width:100%;height:auto;flex-direction:row;
     border-right:none;border-top:1px solid var(--border);padding:6px 8px calc(6px + var(--safe-bottom));z-index:20;}
-  .brand,.tip,.who{display:none;}
+  .brand,.tip,.who-text{display:none;}
+  .who{margin:0;flex:none;align-self:center;}
   .nav{flex-direction:row;flex:1;justify-content:space-around;}
   .nav button{flex:1;flex-direction:column;gap:2px;padding:6px 4px;font-size:11px;justify-content:center;}
   .nav-icon{font-size:18px;}

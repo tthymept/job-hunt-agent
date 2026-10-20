@@ -33,6 +33,19 @@ export function setAccessKey(key) {
   }
 }
 
+// Logging out forgets the key (or the guest choice) on this device, so the
+// next load shows the unlock screen again
+export function clearAccess() {
+  memoryKey = ''
+  memoryGuest = false
+  try {
+    localStorage.removeItem(KEY_STORAGE)
+    localStorage.removeItem(GUEST_STORAGE)
+  } catch {
+    // storage blocked: clearing the in-memory values is enough
+  }
+}
+
 // Visitors without the key can choose to look around as a guest: the server
 // lets them read everything but refuses any change (403).
 export function isGuest() {
