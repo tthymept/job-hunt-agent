@@ -45,6 +45,7 @@ app.add_middleware(
     allow_origins=["http://localhost:5173", "http://localhost:5174"],
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["X-Total-Count"],
 )
 
 # Single-user lock for the deployed app. When APP_ACCESS_KEY is set, every /api
@@ -73,7 +74,11 @@ async def require_access_key(request: Request, call_next):
                     status_code=403,
                     content={"detail": "View-only guest mode. Enter the access key to make changes."},
                 )
+            request.state.guest = True
     return await call_next(request)
+
+def is_guest(request: Request) -> bool:
+    return getattr(request.state, "guest", False)
 
 @app.get("/api/health")
 def health():
@@ -249,18 +254,26 @@ def reshape_tracker_row(row: dict) -> dict:
         **core,
     }
 
+# Guests only see the first few tracked jobs; X-Total-Count tells the
+# dashboard how many more are hidden behind the access key
+GUEST_TRACKER_LIMIT = 4
+
 @app.get("/api/tracker")
-def get_tracker():
+def get_tracker(request: Request, response: Response):
     uid = get_current_user_id()
-    response = (
+    rows = (
         supabase.table("user_job_tracking")
         .select("*, jobs(*)")
         .eq("user_id", uid)
         .neq("status", "Untracked")
         .order("tracking_id")
         .execute()
-    )
-    return [reshape_tracker_row(row) for row in (response.data or [])]
+        .data
+    ) or []
+    response.headers["X-Total-Count"] = str(len(rows))
+    if is_guest(request):
+        rows = rows[:GUEST_TRACKER_LIMIT]
+    return [reshape_tracker_row(row) for row in rows]
 
 class StatusBody(BaseModel):
     status: str

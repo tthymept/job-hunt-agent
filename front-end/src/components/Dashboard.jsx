@@ -38,7 +38,33 @@ function UploadCell({ job, onUploadCv }) {
   )
 }
 
-export default function Dashboard({ jobs, onStatusChange, onOpenDrawer, onUploadCv, onOpenManualModal, onLoadFromUrl }) {
+// Stands in for the tracked jobs a guest can't see: blurred placeholder rows
+// with a prompt to enter the access key
+function LockedRows({ count, onUnlock }) {
+  const ghostRows = Math.min(count, 3)
+  return (
+    <tr className="empty-row locked-row">
+      <td colSpan={10}>
+        <div className="locked">
+          <div className="locked-ghost" aria-hidden="true">
+            {Array.from({ length: ghostRows }, (_, i) => (
+              <div className="ghost-line" key={i}>
+                <span style={{ width: '16%' }} /><span style={{ width: '14%' }} /><span style={{ width: '24%' }} />
+                <span style={{ width: '12%' }} /><span style={{ width: '10%' }} />
+              </div>
+            ))}
+          </div>
+          <div className="locked-msg">
+            <span>🔒 <b>{count} more {count === 1 ? 'job' : 'jobs'}</b> hidden in guest view</span>
+            <button className="btn sm primary" onClick={onUnlock}>Enter access key</button>
+          </div>
+        </div>
+      </td>
+    </tr>
+  )
+}
+
+export default function Dashboard({ jobs, hiddenJobCount, onUnlock, onStatusChange, onOpenDrawer, onUploadCv, onOpenManualModal, onLoadFromUrl }) {
   const [url, setUrl] = useState('')
   const [loadingUrl, setLoadingUrl] = useState(false)
   const [urlMessage, setUrlMessage] = useState(null)
@@ -110,7 +136,9 @@ export default function Dashboard({ jobs, onStatusChange, onOpenDrawer, onUpload
         <h2>
           Job tracker{' '}
           <span className="count">
-            {activeFilters ? `${visibleJobs.length} of ${jobs.length} jobs` : `${jobs.length} jobs`}
+            {activeFilters
+              ? `${visibleJobs.length} of ${jobs.length + hiddenJobCount} jobs`
+              : `${jobs.length + hiddenJobCount} jobs`}
           </span>
         </h2>
         <div className="actions">
@@ -187,6 +215,7 @@ export default function Dashboard({ jobs, onStatusChange, onOpenDrawer, onUpload
             {jobs.length === 0 && (
               <tr className="empty-row"><td colSpan={10}>No tracked jobs yet. Paste a link above or add jobs from Explore.</td></tr>
             )}
+            {hiddenJobCount > 0 && <LockedRows count={hiddenJobCount} onUnlock={onUnlock} />}
           </tbody>
         </table>
       </div>

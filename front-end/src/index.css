@@ -283,3 +283,11 @@ th.cvhead,td.cvcell{text-align:center;}
 .modal-overlay.gate .modal-box{width:380px;max-width:100%;border-radius:12px;border:1px solid var(--border);}
 /* Guest "access key needed" popup: above any modal it was opened from */
 .modal-overlay.blocked{z-index:50;}
+
+/* Guest view: blurred stand-ins for the tracked jobs hidden behind the access key */
+.locked{position:relative;}
+.locked-ghost{filter:blur(3px);opacity:.7;display:flex;flex-direction:column;gap:18px;padding:12px 4px;}
+.ghost-line{display:flex;gap:4%;}
+.ghost-line span{display:block;height:12px;border-radius:6px;background:var(--border);}
+.locked-msg{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap;
+  color:var(--text);font-size:13.5px;text-align:center;}

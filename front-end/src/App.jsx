@@ -18,6 +18,7 @@ export default function App() {
   const [guestBlocked, setGuestBlocked] = useState(false) // a guest tried to change something
   const [logoutOpen, setLogoutOpen] = useState(false)
   const [jobs, setJobs] = useState([])
+  const [hiddenJobCount, setHiddenJobCount] = useState(0) // tracked jobs a guest can't see
   const [drawerJob, setDrawerJob] = useState(null)
   const [generatingId, setGeneratingId] = useState(null)
   const [jobModal, setJobModal] = useState(null) // null | { mode: 'add' } | { mode: 'edit', job }
@@ -30,9 +31,11 @@ export default function App() {
 
   function loadTracker() {
     return apiFetch(`/api/tracker`)
-      .then(readJson)
-      .then(data => {
+      .then(async res => {
+        const data = await readJson(res)
+        const total = Number(res.headers.get('X-Total-Count')) || data.length
         setJobs(data)
+        setHiddenJobCount(Math.max(0, total - data.length))
         return data
       })
       .catch(err => {
@@ -179,6 +182,8 @@ export default function App() {
         {view === 'dashboard' && (
           <Dashboard
             jobs={jobs}
+            hiddenJobCount={hiddenJobCount}
+            onUnlock={() => setGuestBlocked(true)}
             onStatusChange={handleStatusChange}
             onOpenDrawer={setDrawerJob}
             onUploadCv={handleUploadCv}
