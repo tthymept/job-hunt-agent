@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 
-import { API, apiFetch, readJson, accessKeyHeaders } from '../api'
+import { API, apiFetch, readJson, accessKeyHeaders, blockedForGuest } from '../api'
 import PdfViewer from './PdfViewer'
 
 function formatDate(iso) {
@@ -24,7 +24,7 @@ export default function CVPage() {
   }, [])
 
   async function uploadFile(file) {
-    if (!file) return
+    if (!file || blockedForGuest()) return
     if (!file.name.toLowerCase().endsWith('.pdf')) {
       setMessage('Please upload a PDF file.')
       return
@@ -53,6 +53,11 @@ export default function CVPage() {
   function handleFileChange(e) {
     uploadFile(e.target.files[0])
     e.target.value = '' // lets the same file be picked again later
+  }
+
+  // Stops the file picker from opening for a guest, who can't upload anyway
+  function guardPicker(e) {
+    if (blockedForGuest()) e.preventDefault()
   }
 
   function handleDrop(e) {
@@ -85,6 +90,7 @@ export default function CVPage() {
         className="dropzone"
         htmlFor="fileInput"
         style={{ display: 'block' }}
+        onClick={guardPicker}
         onDragOver={e => e.preventDefault()}
         onDrop={handleDrop}
       >
@@ -112,7 +118,7 @@ export default function CVPage() {
             {fileMeta && <span className="sub">{fileMeta}</span>}
           </div>
           <div className="actions">
-            <label className="btn sm" htmlFor="fileInput" style={{ cursor: 'pointer' }}>↻ Replace</label>
+            <label className="btn sm" htmlFor="fileInput" style={{ cursor: 'pointer' }} onClick={guardPicker}>↻ Replace</label>
             <button className="btn sm" onClick={downloadCv}>⬇ Download</button>
           </div>
         </div>

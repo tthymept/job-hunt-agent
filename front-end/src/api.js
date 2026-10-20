@@ -10,7 +10,9 @@ export const JSON_HEADERS = { 'Content-Type': 'application/json' }
 // and kept in this browser's storage. Storage can be unavailable (private mode),
 // in which case the key only lasts until the page is reloaded.
 const KEY_STORAGE = 'jobHuntAccessKey'
+const GUEST_STORAGE = 'jobHuntGuest'
 let memoryKey = ''
+let memoryGuest = false
 
 export function getAccessKey() {
   try {
@@ -22,26 +24,59 @@ export function getAccessKey() {
 
 export function setAccessKey(key) {
   memoryKey = key
+  memoryGuest = false
   try {
     localStorage.setItem(KEY_STORAGE, key)
+    localStorage.removeItem(GUEST_STORAGE)
   } catch {
     // storage blocked: memoryKey still works for this visit
   }
 }
 
+// Visitors without the key can choose to look around as a guest: the server
+// lets them read everything but refuses any change (403).
+export function isGuest() {
+  if (getAccessKey()) return false
+  try {
+    return localStorage.getItem(GUEST_STORAGE) === '1' || memoryGuest
+  } catch {
+    return memoryGuest
+  }
+}
+
+export function setGuest() {
+  memoryGuest = true
+  try {
+    localStorage.setItem(GUEST_STORAGE, '1')
+  } catch {
+    // storage blocked: memoryGuest still works for this visit
+  }
+}
+
+// Call at the start of anything that changes data. For a guest it shows the
+// "access key needed" popup and returns true, so the caller stops there.
+export function blockedForGuest() {
+  if (!isGuest()) return false
+  window.dispatchEvent(new Event('guest-blocked'))
+  return true
+}
+
 export function accessKeyHeaders() {
   const key = getAccessKey()
-  return key ? { 'X-Access-Key': key } : {}
+  if (key) return { 'X-Access-Key': key }
+  return isGuest() ? { 'X-Guest': '1' } : {}
 }
 
 // fetch() for the backend: adds the access key, and when the server says the
 // key is missing or wrong (401), tells the app to show the unlock screen.
+// A guest trying to change something (403) gets the access key popup instead.
 export async function apiFetch(path, options = {}) {
   const res = await fetch(`${API}${path}`, {
     ...options,
     headers: { ...accessKeyHeaders(), ...options.headers },
   })
   if (res.status === 401) window.dispatchEvent(new Event('access-key-needed'))
+  if (res.status === 403 && isGuest()) window.dispatchEvent(new Event('guest-blocked'))
   return res
 }
 

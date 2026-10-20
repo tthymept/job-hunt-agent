@@ -1,20 +1,26 @@
 import { useRef, useState } from 'react'
 import { STATUS, ST_CLASS } from '../data'
 import Calendar from './Calendar'
+import { blockedForGuest } from '../api'
 import { locationGroup } from '../locationGroup'
 
 function UploadCell({ job, onUploadCv }) {
   const inputRef = useRef(null)
+
+  function pickFile() {
+    if (blockedForGuest()) return
+    inputRef.current.click()
+  }
 
   return (
     <>
       {job.myUploadUrl ? (
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 10 }}>
           <a className="filelink" href={job.myUploadUrl} target="_blank" rel="noreferrer">📎 View upload</a>
-          <button className="btn sm" title="Replace upload" aria-label="Replace upload" onClick={() => inputRef.current.click()}>⬆</button>
+          <button className="btn sm" title="Replace upload" aria-label="Replace upload" onClick={pickFile}>⬆</button>
         </span>
       ) : (
-        <button className="btn sm" onClick={() => inputRef.current.click()}>⬆ Upload</button>
+        <button className="btn sm" onClick={pickFile}>⬆ Upload</button>
       )}
       {/* One hidden file input serves both the Upload and Replace buttons */}
       <input

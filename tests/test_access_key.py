@@ -24,6 +24,22 @@ def test_right_key_passes_the_lock(monkeypatch):
     assert client.get("/api/does-not-exist", headers={"X-Access-Key": "secret"}).status_code == 404
 
 
+def test_guest_can_read_but_not_write(monkeypatch):
+    monkeypatch.setattr(api, "APP_ACCESS_KEY", "secret")
+    guest = {"X-Guest": "1"}
+    # Reads get past the middleware to the router, which has no such route
+    assert client.get("/api/does-not-exist", headers=guest).status_code == 404
+    assert client.post("/api/does-not-exist", headers=guest).status_code == 403
+    assert client.patch("/api/does-not-exist", headers=guest).status_code == 403
+    assert client.delete("/api/does-not-exist", headers=guest).status_code == 403
+
+
+def test_guest_header_does_not_excuse_a_wrong_key(monkeypatch):
+    monkeypatch.setattr(api, "APP_ACCESS_KEY", "secret")
+    headers = {"X-Guest": "1", "X-Access-Key": "wrong"}
+    assert client.get("/api/does-not-exist", headers=headers).status_code == 401
+
+
 def test_health_check_stays_open_for_render(monkeypatch):
     monkeypatch.setattr(api, "APP_ACCESS_KEY", "secret")
     assert client.get("/api/health").status_code == 200

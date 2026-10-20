@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { apiFetch, readJson, JSON_HEADERS } from '../api'
+import { apiFetch, readJson, JSON_HEADERS, blockedForGuest } from '../api'
 
 
 function titleCase(text) {
@@ -50,6 +50,7 @@ export default function InterestsModal({ open, onClose }) {
 
   async function handleAdd(e) {
     e.preventDefault()
+    if (blockedForGuest()) return
     setSubmitting(true)
     setError(null)
     try {
@@ -72,6 +73,7 @@ export default function InterestsModal({ open, onClose }) {
   }
 
   async function updateStatus(id, status) {
+    if (blockedForGuest()) return
     try {
       await apiFetch(`/api/interests/${id}`, {
         method: 'PATCH',
@@ -85,6 +87,7 @@ export default function InterestsModal({ open, onClose }) {
   }
 
   async function removeInterest(id) {
+    if (blockedForGuest()) return
     if (!window.confirm('Remove this search interest? Jobs already found will stay in Explore.')) return
     try {
       await apiFetch(`/api/interests/${id}`, { method: 'DELETE' })

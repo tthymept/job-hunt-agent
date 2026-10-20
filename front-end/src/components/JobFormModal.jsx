@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 
-import { apiFetch } from '../api'
+import { apiFetch, blockedForGuest } from '../api'
 
 const EMPTY_FORM = {
   company: '', title: '', location: '', duration: '',
@@ -44,6 +44,7 @@ export default function JobFormModal({ open, mode, initial, trackingId, onClose,
 
   function handleSubmit(e) {
     e.preventDefault()
+    if (blockedForGuest()) return
     if (!form.company.trim() || !form.title.trim()) {
       setError('Company and Job Title are required.')
       return

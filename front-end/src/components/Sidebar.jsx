@@ -19,7 +19,7 @@ function initials(name) {
 // Here: view is just a piece of state. Clicking a button calls
 // setView(), and the "active" class + which page shows are both
 // derived from that one value - no manual class-toggling anywhere.
-export default function Sidebar({ view, setView, me }) {
+export default function Sidebar({ view, setView, me, guest, onUnlock }) {
   return (
     <aside className="sidebar">
       <div className="brand"><span className="mark">💼</span> <span className="brand-name">Job Hunt Pipeline</span></div>
@@ -36,7 +36,14 @@ export default function Sidebar({ view, setView, me }) {
           </button>
         ))}
       </nav>
-      <div className="tip"><b>Pipeline tip</b>Keep deadlines current to see them in your calendar.</div>
+      {guest ? (
+        <div className="tip">
+          <b>👀 Guest view</b>You can look around, but changes need the access key.
+          <button className="btn sm" style={{ marginTop: 8 }} onClick={onUnlock}>🔒 Enter key</button>
+        </div>
+      ) : (
+        <div className="tip"><b>Pipeline tip</b>Keep deadlines current to see them in your calendar.</div>
+      )}
       {me && (
         <div className="who">
           <span className="dot">{initials(me.name)}</span>

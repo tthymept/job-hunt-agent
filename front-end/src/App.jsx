@@ -6,7 +6,7 @@ import CVPage from './components/CVPage'
 import Drawer from './components/Drawer'
 import JobFormModal from './components/JobFormModal'
 import AccessKeyGate from './components/AccessKeyGate'
-import { apiFetch, readJson } from './api'
+import { apiFetch, readJson, isGuest, blockedForGuest } from './api'
 
 const EXPLORE_PAGE_SIZE = 20
 
@@ -14,6 +14,7 @@ export default function App() {
   const [view, setView] = useState('dashboard')
   const [me, setMe] = useState(null)
   const [locked, setLocked] = useState(false) // true when the server rejected the access key
+  const [guestBlocked, setGuestBlocked] = useState(false) // a guest tried to change something
   const [jobs, setJobs] = useState([])
   const [drawerJob, setDrawerJob] = useState(null)
   const [generatingId, setGeneratingId] = useState(null)
@@ -41,8 +42,13 @@ export default function App() {
   // apiFetch fires this event on any 401 reply
   useEffect(() => {
     const lock = () => setLocked(true)
+    const block = () => setGuestBlocked(true)
     window.addEventListener('access-key-needed', lock)
-    return () => window.removeEventListener('access-key-needed', lock)
+    window.addEventListener('guest-blocked', block)
+    return () => {
+      window.removeEventListener('access-key-needed', lock)
+      window.removeEventListener('guest-blocked', block)
+    }
   }, [])
 
   useEffect(() => {
@@ -77,6 +83,7 @@ export default function App() {
   }, [explorePage, exploreSort, exploreFilters])
 
   function handleStatusChange(trackingId, status) {
+    if (blockedForGuest()) return
     if (status === 'Untracked') {
       setJobs(prev => prev.filter(j => j.trackingId !== trackingId))
     } else {
@@ -90,6 +97,7 @@ export default function App() {
   }
 
   function handleAddToMyJobs(index) {
+    if (blockedForGuest()) return
     const job = exploreJobs[index]
     setExploreJobs(prev => prev.map((j, i) => (i === index ? { ...j, trackState: 'added' } : j)))
     apiFetch(`/api/tracker`, {
@@ -109,6 +117,7 @@ export default function App() {
     setExplorePage(1)
   }
   function handleGenerateBullets(trackingId) {
+    if (blockedForGuest()) return
     setGeneratingId(trackingId)
     apiFetch(`/api/tracker/${trackingId}/generate-bullets`, { method: 'POST' })
       .then(async res => {
@@ -137,6 +146,7 @@ export default function App() {
 
   // Returns { ok, message } so the Dashboard can show feedback under the URL bar
   async function handleLoadFromUrl(url) {
+    if (blockedForGuest()) return { ok: false }
     try {
       const res = await apiFetch(`/api/jobs/from-url`, {
         method: 'POST',
@@ -161,7 +171,7 @@ export default function App() {
 
   return (
     <div className={`app${drawerJob ? ' drawer-open' : ''}`}>
-      <Sidebar view={view} setView={setView} me={me} />
+      <Sidebar view={view} setView={setView} me={me} guest={isGuest()} onUnlock={() => setGuestBlocked(true)} />
 
       <main className="main">
         {view === 'dashboard' && (
@@ -215,6 +225,8 @@ export default function App() {
           )
         }}
       />
+
+      {guestBlocked && <AccessKeyGate blocked onClose={() => setGuestBlocked(false)} />}
     </div>
   )
 }

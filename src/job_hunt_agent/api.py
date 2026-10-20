@@ -49,8 +49,11 @@ app.add_middleware(
 
 # Single-user lock for the deployed app. When APP_ACCESS_KEY is set, every /api
 # request (except the health check) must send it in the X-Access-Key header.
+# Visitors without the key can browse as a guest (X-Guest header): reads are
+# allowed, anything that changes data is refused with 403.
 # Locally it is usually unset, so nothing changes during development.
 APP_ACCESS_KEY = os.environ.get("APP_ACCESS_KEY", "")
+READ_METHODS = ("GET", "HEAD")
 
 @app.middleware("http")
 async def require_access_key(request: Request, call_next):
@@ -63,7 +66,13 @@ async def require_access_key(request: Request, call_next):
     ):
         sent = request.headers.get("x-access-key", "")
         if not hmac.compare_digest(sent.encode(), APP_ACCESS_KEY.encode()):
-            return JSONResponse(status_code=401, content={"detail": "Access key required."})
+            if sent or not request.headers.get("x-guest"):
+                return JSONResponse(status_code=401, content={"detail": "Access key required."})
+            if request.method not in READ_METHODS:
+                return JSONResponse(
+                    status_code=403,
+                    content={"detail": "View-only guest mode. Enter the access key to make changes."},
+                )
     return await call_next(request)
 
 @app.get("/api/health")
