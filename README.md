@@ -123,7 +123,9 @@ The app deploys to [Render](https://render.com) as a single Docker service. The 
 3. Enter the secrets from your `.env`, plus a long random `APP_ACCESS_KEY`.
 4. Open the `onrender.com` URL and enter the access key once per device.
 
-Every push to `main` redeploys. On the free plan the service sleeps when idle, so the first request after a break takes 30–60 seconds.
+Every push to `main` redeploys. On the free plan the service sleeps after 15 minutes without traffic, so the first request after a break takes 30–60 seconds.
+
+**Keeping it awake:** a free [UptimeRobot](https://uptimerobot.com) HTTP monitor on `https://<your-app>.onrender.com/api/health` every 5 minutes keeps the service from sleeping. The health check needs no access key. An always-on service uses about 744 of Render's 750 free hours a month, so this only works for one free service per workspace.
 
 **Access key:** the app is single-user. When `APP_ACCESS_KEY` is set, every API request must send it in the `X-Access-Key` header. The frontend asks for it once and remembers it in that browser.
 
