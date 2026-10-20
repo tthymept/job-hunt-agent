@@ -49,10 +49,11 @@ def test_guest_sees_only_the_first_tracked_jobs(monkeypatch):
 
     guest = client.get("/api/tracker", headers={"X-Guest": "1"})
     assert guest.json() == [0, 1, 2, 3]
-    assert guest.headers["X-Total-Count"] == "10"
+    assert guest.headers["X-Total-Count"] == "5"  # "more exist", not the real total
 
     owner = client.get("/api/tracker", headers={"X-Access-Key": "secret"})
     assert len(owner.json()) == 10
+    assert owner.headers["X-Total-Count"] == "10"
 
 
 def test_guest_header_does_not_excuse_a_wrong_key(monkeypatch):

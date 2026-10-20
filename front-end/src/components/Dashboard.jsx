@@ -40,14 +40,13 @@ function UploadCell({ job, onUploadCv }) {
 
 // Stands in for the tracked jobs a guest can't see: blurred placeholder rows
 // with a prompt to enter the access key
-function LockedRows({ count, onUnlock }) {
-  const ghostRows = Math.min(count, 3)
+function LockedRows({ onUnlock }) {
   return (
     <tr className="empty-row locked-row">
       <td colSpan={10}>
         <div className="locked">
           <div className="locked-ghost" aria-hidden="true">
-            {Array.from({ length: ghostRows }, (_, i) => (
+            {[0, 1, 2].map(i => (
               <div className="ghost-line" key={i}>
                 <span style={{ width: '16%' }} /><span style={{ width: '14%' }} /><span style={{ width: '24%' }} />
                 <span style={{ width: '12%' }} /><span style={{ width: '10%' }} />
@@ -55,7 +54,7 @@ function LockedRows({ count, onUnlock }) {
             ))}
           </div>
           <div className="locked-msg">
-            <span>🔒 <b>{count} more {count === 1 ? 'job' : 'jobs'}</b> hidden in guest view</span>
+            <span>🔒 <b>More jobs</b> hidden in guest view</span>
             <button className="btn sm primary" onClick={onUnlock}>Enter access key</button>
           </div>
         </div>
@@ -99,6 +98,8 @@ export default function Dashboard({ jobs, hiddenJobCount, onUnlock, onStatusChan
       (locationFilter === 'all' || locationGroup(j.loc).key === locationFilter)
   )
   const activeFilters = [statusFilter, locationFilter].filter(f => f !== 'all').length
+  // Guests see "4+" rather than the real total, which would give away how many are hidden
+  const jobCountLabel = hiddenJobCount > 0 ? `${jobs.length}+` : jobs.length
 
   function clearFilters() {
     setStatusFilter('all')
@@ -137,8 +138,8 @@ export default function Dashboard({ jobs, hiddenJobCount, onUnlock, onStatusChan
           Job tracker{' '}
           <span className="count">
             {activeFilters
-              ? `${visibleJobs.length} of ${jobs.length + hiddenJobCount} jobs`
-              : `${jobs.length + hiddenJobCount} jobs`}
+              ? `${visibleJobs.length} of ${jobCountLabel} jobs`
+              : `${jobCountLabel} jobs`}
           </span>
         </h2>
         <div className="actions">
@@ -215,7 +216,7 @@ export default function Dashboard({ jobs, hiddenJobCount, onUnlock, onStatusChan
             {jobs.length === 0 && (
               <tr className="empty-row"><td colSpan={10}>No tracked jobs yet. Paste a link above or add jobs from Explore.</td></tr>
             )}
-            {hiddenJobCount > 0 && <LockedRows count={hiddenJobCount} onUnlock={onUnlock} />}
+            {hiddenJobCount > 0 && <LockedRows onUnlock={onUnlock} />}
           </tbody>
         </table>
       </div>

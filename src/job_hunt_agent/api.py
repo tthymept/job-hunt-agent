@@ -254,8 +254,9 @@ def reshape_tracker_row(row: dict) -> dict:
         **core,
     }
 
-# Guests only see the first few tracked jobs; X-Total-Count tells the
-# dashboard how many more are hidden behind the access key
+# Guests only see the first few tracked jobs. X-Total-Count tells the dashboard
+# that more are hidden behind the access key; for a guest it is capped at one
+# over the limit, so it never gives away the real number
 GUEST_TRACKER_LIMIT = 4
 
 @app.get("/api/tracker")
@@ -270,9 +271,11 @@ def get_tracker(request: Request, response: Response):
         .execute()
         .data
     ) or []
-    response.headers["X-Total-Count"] = str(len(rows))
+    total = len(rows)
     if is_guest(request):
+        total = min(total, GUEST_TRACKER_LIMIT + 1)
         rows = rows[:GUEST_TRACKER_LIMIT]
+    response.headers["X-Total-Count"] = str(total)
     return [reshape_tracker_row(row) for row in rows]
 
 class StatusBody(BaseModel):
