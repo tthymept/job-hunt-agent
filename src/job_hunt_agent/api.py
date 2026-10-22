@@ -353,6 +353,25 @@ async def upload_my_cv(tracking_id: int, file: UploadFile = File(...)):
     supabase.table("user_job_tracking").update({"my_upload_path": path}).eq("tracking_id", tracking_id).eq("user_id", uid).execute()
     return {"status": "uploaded", "path": path}
 
+@app.delete("/api/tracker/{tracking_id}/upload")
+def delete_my_cv(tracking_id: int):
+    uid = get_current_user_id()
+    rows = (
+        supabase.table("user_job_tracking")
+        .select("my_upload_path")
+        .eq("tracking_id", tracking_id)
+        .eq("user_id", uid)
+        .execute()
+        .data
+    )
+    if not rows:
+        raise HTTPException(status_code=404, detail="Tracked job not found.")
+    path = rows[0].get("my_upload_path")
+    if path:
+        supabase.storage.from_("resumes").remove([path])
+    supabase.table("user_job_tracking").update({"my_upload_path": None}).eq("tracking_id", tracking_id).eq("user_id", uid).execute()
+    return {"status": "deleted"}
+
 def track_job_for_user(uid: int, job_id: str) -> str:
     existing = (
         supabase.table("user_job_tracking")

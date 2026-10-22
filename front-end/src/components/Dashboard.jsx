@@ -4,12 +4,17 @@ import Calendar from './Calendar'
 import { blockedForGuest } from '../api'
 import { locationGroup } from '../locationGroup'
 
-function UploadCell({ job, onUploadCv }) {
+function UploadCell({ job, onUploadCv, onDeleteCv }) {
   const inputRef = useRef(null)
 
   function pickFile() {
     if (blockedForGuest()) return
     inputRef.current.click()
+  }
+
+  function deleteFile() {
+    if (blockedForGuest()) return
+    onDeleteCv(job.trackingId)
   }
 
   return (
@@ -18,6 +23,7 @@ function UploadCell({ job, onUploadCv }) {
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 10 }}>
           <a className="filelink" href={job.myUploadUrl} target="_blank" rel="noreferrer">📎 View upload</a>
           <button className="btn sm" title="Replace upload" aria-label="Replace upload" onClick={pickFile}>⬆</button>
+          <button className="btn sm" title="Delete upload" aria-label="Delete upload" onClick={deleteFile}>🗑</button>
         </span>
       ) : (
         <button className="btn sm" onClick={pickFile}>⬆ Upload</button>
@@ -63,7 +69,7 @@ function LockedRows({ onUnlock }) {
   )
 }
 
-export default function Dashboard({ jobs, hiddenJobCount, onUnlock, onStatusChange, onOpenDrawer, onUploadCv, onOpenManualModal, onLoadFromUrl }) {
+export default function Dashboard({ jobs, hiddenJobCount, onUnlock, onStatusChange, onOpenDrawer, onUploadCv, onDeleteCv, onOpenManualModal, onLoadFromUrl }) {
   const [url, setUrl] = useState('')
   const [loadingUrl, setLoadingUrl] = useState(false)
   const [urlMessage, setUrlMessage] = useState(null)
@@ -204,7 +210,7 @@ export default function Dashboard({ jobs, hiddenJobCount, onUnlock, onStatusChan
                 <td data-label="Apply">
                   {j.applyLink ? <a className="applink" href={j.applyLink} target="_blank" rel="noreferrer">Open ↗</a> : '—'}
                 </td>
-                <td className="cvcell" data-label="My upload"><UploadCell job={j} onUploadCv={onUploadCv} /></td>
+                <td className="cvcell" data-label="My upload"><UploadCell job={j} onUploadCv={onUploadCv} onDeleteCv={onDeleteCv} /></td>
                 <td className="c-open">
                   <button className="chev" aria-label="Show details" onClick={() => onOpenDrawer(j)}>›</button>
                 </td>

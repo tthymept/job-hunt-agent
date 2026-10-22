@@ -149,6 +149,15 @@ export default function App() {
       .catch(err => console.error('Failed to upload CV:', err))
   }
 
+  function handleDeleteCv(trackingId) {
+    setJobs(prev => prev.map(j => (j.trackingId === trackingId ? { ...j, myUploadUrl: null } : j)))
+    apiFetch(`/api/tracker/${trackingId}/upload`, { method: 'DELETE' })
+      .catch(err => {
+        console.error('Failed to delete CV:', err)
+        loadTracker()
+      })
+  }
+
   // Returns { ok, message } so the Dashboard can show feedback under the URL bar
   async function handleLoadFromUrl(url) {
     if (blockedForGuest()) return { ok: false }
@@ -187,6 +196,7 @@ export default function App() {
             onStatusChange={handleStatusChange}
             onOpenDrawer={setDrawerJob}
             onUploadCv={handleUploadCv}
+            onDeleteCv={handleDeleteCv}
             onOpenManualModal={() => setJobModal({ mode: 'add' })}
             onLoadFromUrl={handleLoadFromUrl}
           />
