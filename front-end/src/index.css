@@ -68,6 +68,8 @@ input[type=text],input[type=search],select{background:var(--surface);border:1px 
 .sectionhead .count{color:var(--muted);font-weight:400;font-size:13px;margin-left:6px;}
 .filterbar{display:flex;align-items:flex-end;gap:16px;flex-wrap:wrap;padding:14px 16px;margin-bottom:12px;}
 .filterbar .field-row{margin-bottom:0;min-width:200px;}
+.filterbar.columnsbar{align-items:center;gap:10px 18px;}
+.col-toggle{display:inline-flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;}
 .tablewrap{overflow-x:auto;}
 table{width:100%;border-collapse:collapse;min-width:900px;}
 th{text-align:left;font-size:11px;letter-spacing:.03em;color:var(--muted);text-transform:uppercase;

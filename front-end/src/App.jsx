@@ -98,7 +98,15 @@ export default function App() {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status }),
-    }).catch(err => console.error('Failed to update status:', err))
+    })
+      .then(readJson)
+      .then(data => {
+        setJobs(prev => prev.map(j => (j.trackingId === trackingId ? { ...j, submittedAt: data.submittedAt } : j)))
+      })
+      .catch(err => {
+        console.error('Failed to update status:', err)
+        loadTracker()
+      })
   }
 
   function handleAddToMyJobs(index) {

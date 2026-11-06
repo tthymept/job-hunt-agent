@@ -4,6 +4,39 @@ import Calendar from './Calendar'
 import { blockedForGuest } from '../api'
 import { locationGroup } from '../locationGroup'
 
+// The columns you can show or hide. The details arrow at the end of each row always stays.
+const COLUMNS = [
+  { key: 'status', label: 'Status' },
+  { key: 'company', label: 'Company' },
+  { key: 'title', label: 'Job Title' },
+  { key: 'location', label: 'Location' },
+  { key: 'duration', label: 'Duration' },
+  { key: 'minDuration', label: 'Min. Duration' },
+  { key: 'deadline', label: 'Deadline' },
+  { key: 'submitted', label: 'Submitted' },
+  { key: 'apply', label: 'Apply Link' },
+  { key: 'upload', label: 'My Upload', thClass: 'cvhead' },
+]
+
+// Stores the hidden columns rather than the shown ones, so a column added later
+// shows up by default. Storage can be unavailable (private mode), in which case
+// the choice only lasts until the page is reloaded.
+const HIDDEN_COLUMNS_STORAGE = 'jobHuntHiddenColumns'
+
+function loadHiddenColumns() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(HIDDEN_COLUMNS_STORAGE))
+    return Array.isArray(saved) ? saved : []
+  } catch {
+    return []
+  }
+}
+
+// en-CA gives YYYY-MM-DD, the same format as the Deadline column, in the viewer's timezone
+function formatSubmittedDate(iso) {
+  return iso ? new Date(iso).toLocaleDateString('en-CA') : '—'
+}
+
 function UploadCell({ job, onUploadCv, onDeleteCv }) {
   const inputRef = useRef(null)
 
@@ -46,10 +79,10 @@ function UploadCell({ job, onUploadCv, onDeleteCv }) {
 
 // Stands in for the tracked jobs a guest can't see: blurred placeholder rows
 // with a prompt to enter the access key
-function LockedRows({ onUnlock }) {
+function LockedRows({ onUnlock, colSpan }) {
   return (
     <tr className="empty-row locked-row">
-      <td colSpan={10}>
+      <td colSpan={colSpan}>
         <div className="locked">
           <div className="locked-ghost" aria-hidden="true">
             {[0, 1, 2].map(i => (
@@ -112,6 +145,26 @@ export default function Dashboard({ jobs, hiddenJobCount, onUnlock, onStatusChan
     setLocationFilter('all')
   }
 
+  const [showColumns, setShowColumns] = useState(false)
+  const [hiddenColumns, setHiddenColumns] = useState(loadHiddenColumns)
+  const shownColumns = COLUMNS.filter(c => !hiddenColumns.includes(c.key))
+  const hiddenCount = COLUMNS.length - shownColumns.length
+  const isShown = key => !hiddenColumns.includes(key)
+  const colSpan = shownColumns.length + 1 // + the details arrow
+
+  function saveHiddenColumns(next) {
+    setHiddenColumns(next)
+    try {
+      localStorage.setItem(HIDDEN_COLUMNS_STORAGE, JSON.stringify(next))
+    } catch {
+      // Storage unavailable: the choice still applies until the page is reloaded
+    }
+  }
+
+  function toggleColumn(key) {
+    saveHiddenColumns(isShown(key) ? [...hiddenColumns, key] : hiddenColumns.filter(k => k !== key))
+  }
+
   return (
     <section>
       <div className="pagehead">
@@ -152,7 +205,9 @@ export default function Dashboard({ jobs, hiddenJobCount, onUnlock, onStatusChan
           <button className="btn sm" onClick={() => setShowFilter(s => !s)}>
             ☰ Filter{activeFilters ? ` (${activeFilters})` : ''}
           </button>
-          <button className="btn sm">▤ Columns</button>
+          <button className="btn sm" onClick={() => setShowColumns(s => !s)}>
+            ▤ Columns{hiddenCount ? ` (${hiddenCount} hidden)` : ''}
+          </button>
           <button className="btn sm primary" onClick={onOpenManualModal}>+ Add Job Manually</button>
         </div>
       </div>
@@ -180,49 +235,73 @@ export default function Dashboard({ jobs, hiddenJobCount, onUnlock, onStatusChan
           <button className="btn sm" onClick={clearFilters}>Clear</button>
         </div>
       )}
+
+      {showColumns && (
+        <div className="card filterbar columnsbar">
+          {COLUMNS.map(c => (
+            <label className="col-toggle" key={c.key}>
+              <input
+                type="checkbox"
+                checked={isShown(c.key)}
+                disabled={isShown(c.key) && shownColumns.length === 1} // keep at least one column
+                onChange={() => toggleColumn(c.key)}
+              />
+              {c.label}
+            </label>
+          ))}
+          <button className="btn sm" onClick={() => saveHiddenColumns([])}>Show all</button>
+        </div>
+      )}
       <div className="card tablewrap">
         <table className="cards">
           <thead>
             <tr>
-              <th>Status</th><th>Company</th><th>Job Title</th><th>Location</th><th>Duration</th>
-              <th>Min. Duration</th><th>Deadline</th><th>Apply Link</th><th className="cvhead">My Upload</th><th></th>
+              {shownColumns.map(c => <th key={c.key} className={c.thClass}>{c.label}</th>)}
+              <th></th>
             </tr>
           </thead>
           <tbody>
             {visibleJobs.map(j => (
               <tr key={j.trackingId}>
-                <td className="c-full">
-                  <select
-                    className={`pill st-${ST_CLASS[j.status]}`}
-                    value={j.status}
-                    onChange={e => onStatusChange(j.trackingId, e.target.value)}
-                  >
-                    {STATUS.map(s => <option key={s}>{s}</option>)}
-                    <option value="Untracked" style={{ color: 'crimson' }}>🗑 Untrack</option>
-                  </select>
-                </td>
-                <td className="c-co">{j.co}</td>
-                <td className="job-title c-title">{j.title}</td>
-                <td data-label="Location">{j.loc}</td>
-                <td data-label="Duration">{j.dur}</td>
-                <td data-label="Min. duration">{j.min}</td>
-                <td data-label="Deadline">{j.dl}</td>
-                <td data-label="Apply">
-                  {j.applyLink ? <a className="applink" href={j.applyLink} target="_blank" rel="noreferrer">Open ↗</a> : '—'}
-                </td>
-                <td className="cvcell" data-label="My upload"><UploadCell job={j} onUploadCv={onUploadCv} onDeleteCv={onDeleteCv} /></td>
+                {isShown('status') && (
+                  <td className="c-full">
+                    <select
+                      className={`pill st-${ST_CLASS[j.status]}`}
+                      value={j.status}
+                      onChange={e => onStatusChange(j.trackingId, e.target.value)}
+                    >
+                      {STATUS.map(s => <option key={s}>{s}</option>)}
+                      <option value="Untracked" style={{ color: 'crimson' }}>🗑 Untrack</option>
+                    </select>
+                  </td>
+                )}
+                {isShown('company') && <td className="c-co">{j.co}</td>}
+                {isShown('title') && <td className="job-title c-title">{j.title}</td>}
+                {isShown('location') && <td data-label="Location">{j.loc}</td>}
+                {isShown('duration') && <td data-label="Duration">{j.dur}</td>}
+                {isShown('minDuration') && <td data-label="Min. duration">{j.min}</td>}
+                {isShown('deadline') && <td data-label="Deadline">{j.dl}</td>}
+                {isShown('submitted') && <td data-label="Submitted">{formatSubmittedDate(j.submittedAt)}</td>}
+                {isShown('apply') && (
+                  <td data-label="Apply">
+                    {j.applyLink ? <a className="applink" href={j.applyLink} target="_blank" rel="noreferrer">Open ↗</a> : '—'}
+                  </td>
+                )}
+                {isShown('upload') && (
+                  <td className="cvcell" data-label="My upload"><UploadCell job={j} onUploadCv={onUploadCv} onDeleteCv={onDeleteCv} /></td>
+                )}
                 <td className="c-open">
                   <button className="chev" aria-label="Show details" onClick={() => onOpenDrawer(j)}>›</button>
                 </td>
               </tr>
             ))}
             {jobs.length > 0 && visibleJobs.length === 0 && (
-              <tr className="empty-row"><td colSpan={10}>No jobs match these filters.</td></tr>
+              <tr className="empty-row"><td colSpan={colSpan}>No jobs match these filters.</td></tr>
             )}
             {jobs.length === 0 && (
-              <tr className="empty-row"><td colSpan={10}>No tracked jobs yet. Paste a link above or add jobs from Explore.</td></tr>
+              <tr className="empty-row"><td colSpan={colSpan}>No tracked jobs yet. Paste a link above or add jobs from Explore.</td></tr>
             )}
-            {hiddenJobCount > 0 && <LockedRows onUnlock={onUnlock} />}
+            {hiddenJobCount > 0 && <LockedRows onUnlock={onUnlock} colSpan={colSpan} />}
           </tbody>
         </table>
       </div>

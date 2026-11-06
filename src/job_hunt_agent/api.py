@@ -250,6 +250,7 @@ def reshape_tracker_row(row: dict) -> dict:
         "status": row.get("status") or "Saved / Not Applied",
         "bullets": bullets,
         "myUploadUrl": my_upload_url,
+        "submittedAt": row.get("submitted_at"),
         "edit": editable_fields(merged_raw),
         **core,
     }
@@ -281,16 +282,36 @@ def get_tracker(request: Request, response: Response):
 class StatusBody(BaseModel):
     status: str
 
+def next_submitted_at(new_status: str, current: str | None, now: str) -> str | None:
+    """The first move to Submitted sets the date and later stages keep it.
+    Going back to Saved clears it, so a mis-click leaves no date behind."""
+    if new_status == "Saved / Not Applied":
+        return None
+    if new_status == "Submitted" and not current:
+        return now
+    return current
+
 @app.patch("/api/tracker/{tracking_id}/status")
 def update_status(tracking_id: int, body: StatusBody):
     uid = get_current_user_id()
-    response = supabase.table("user_job_tracking").update({
-        "status": body.status,
-        "status_updated_at": datetime.now(timezone.utc).isoformat(),
-    }).eq("tracking_id", tracking_id).eq("user_id", uid).execute()
-    if not response.data:
+    rows = (
+        supabase.table("user_job_tracking")
+        .select("submitted_at")
+        .eq("tracking_id", tracking_id)
+        .eq("user_id", uid)
+        .execute()
+        .data
+    )
+    if not rows:
         raise HTTPException(status_code=404, detail="Tracked job not found.")
-    return {"status": "ok"}
+    now = datetime.now(timezone.utc).isoformat()
+    submitted_at = next_submitted_at(body.status, rows[0].get("submitted_at"), now)
+    supabase.table("user_job_tracking").update({
+        "status": body.status,
+        "status_updated_at": now,
+        "submitted_at": submitted_at,
+    }).eq("tracking_id", tracking_id).eq("user_id", uid).execute()
+    return {"status": "ok", "submittedAt": submitted_at}
 
 # Wire CV
 @app.post("/api/tracker/{tracking_id}/generate-bullets")
@@ -386,6 +407,7 @@ def track_job_for_user(uid: int, job_id: str) -> str:
             supabase.table("user_job_tracking").update({
                 "status": "Saved / Not Applied",
                 "status_updated_at": datetime.now(timezone.utc).isoformat(),
+                "submitted_at": None,
             }).eq("tracking_id", row["tracking_id"]).execute()
             return "retracked"
         return "already_tracked"
