@@ -8,6 +8,37 @@ function formatDate(iso) {
   return new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
 }
 
+// Line widths for the blurred page a guest sees: name, contact line, then sections
+const GHOST_CV_LINES = [
+  '34%', '62%',
+  '18%', '92%', '80%', '56%',
+  '22%', '88%', '84%', '90%', '70%',
+  '26%', '94%', '86%', '90%', '78%', '88%', '64%',
+]
+
+// The PDF and its text never reach a guest, so this stands in for the preview
+function LockedCv() {
+  return (
+    <div className="card pdf-card">
+      <div className="pdf-pages">
+        <div className="pdf-page locked locked-cv">
+          <div className="locked-ghost" aria-hidden="true">
+            {GHOST_CV_LINES.map((width, i) => (
+              <div className="ghost-line" key={i} style={i < 2 ? { justifyContent: 'center' } : undefined}>
+                <span style={{ width }} />
+              </div>
+            ))}
+          </div>
+          <div className="locked-msg">
+            <span>🔒 <b>CV preview</b> hidden in guest view</span>
+            <button className="btn sm primary" onClick={blockedForGuest}>Enter access key</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function CVPage() {
   // null while loading, { exists: false } when no CV, otherwise the saved CV
   const [cv, setCv] = useState(null)
@@ -66,10 +97,12 @@ export default function CVPage() {
   }
 
   function downloadCv() {
+    if (blockedForGuest()) return
     if (cv?.downloadUrl) window.open(cv.downloadUrl, '_blank')
   }
 
   const hasCv = cv?.exists
+  const locked = cv?.locked // guest view: the file details only, no preview or text
   const sections = cv?.structure?.sections || []
   const fileMeta = [
     cv?.updatedAt && `Updated ${formatDate(cv.updatedAt)}`,
@@ -130,7 +163,9 @@ export default function CVPage() {
         </div>
       )}
 
-      {hasCv && (
+      {hasCv && locked && <LockedCv />}
+
+      {hasCv && !locked && (
         <div className="card pdf-card">
           {/* updatedAt in the URL makes the browser fetch the new file after a replace */}
           <PdfViewer
@@ -140,7 +175,7 @@ export default function CVPage() {
         </div>
       )}
 
-      {hasCv && sections.length === 0 && (
+      {hasCv && !locked && sections.length === 0 && (
         <div className="card" style={{ padding: 20, textAlign: 'center', color: 'var(--sub)', fontSize: 13.5, marginTop: 16 }}>
           Your CV is saved, but its text hasn't been read yet, so tailoring won't work. Replace it to try again.
         </div>

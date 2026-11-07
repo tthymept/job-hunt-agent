@@ -806,14 +806,24 @@ def cv_payload(uid: int) -> dict:
 
 
 @app.get("/api/cv")
-def get_cv():
-    return cv_payload(get_current_user_id())
+def get_cv(request: Request):
+    payload = cv_payload(get_current_user_id())
+    if is_guest(request) and payload["exists"]:
+        # A guest learns that a CV exists, never its contents or a link to the file
+        return {
+            "exists": True,
+            "locked": True,
+            **{k: payload[k] for k in ("fileName", "sizeKb", "updatedAt")},
+        }
+    return payload
 
 
 @app.get("/api/cv/file")
-def get_cv_file():
+def get_cv_file(request: Request):
     # The PDF itself, served through the API (same origin as the app) so the
     # My CV page can render it with pdf.js without CORS or signed-URL expiry
+    if is_guest(request):
+        raise HTTPException(status_code=403, detail="View-only guest mode. Enter the access key to see the CV.")
     uid = get_current_user_id()
     rows = supabase.table("users").select("resume_path").eq("user_id", uid).execute().data
     path = rows[0].get("resume_path") if rows else None

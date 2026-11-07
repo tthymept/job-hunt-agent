@@ -56,6 +56,27 @@ def test_guest_sees_only_the_first_tracked_jobs(monkeypatch):
     assert owner.headers["X-Total-Count"] == "10"
 
 
+def test_guest_cannot_see_the_cv(monkeypatch):
+    monkeypatch.setattr(api, "APP_ACCESS_KEY", "secret")
+    full = {
+        "exists": True,
+        "fileName": "cv.pdf",
+        "sizeKb": 107,
+        "updatedAt": "2026-10-12T00:00:00+00:00",
+        "structure": {"sections": [{"title": "Education"}]},
+        "downloadUrl": "https://example.supabase.co/signed",
+    }
+    monkeypatch.setattr(api, "cv_payload", lambda uid: full)
+
+    guest = client.get("/api/cv", headers={"X-Guest": "1"}).json()
+    assert guest["locked"] is True
+    assert "structure" not in guest and "downloadUrl" not in guest
+    assert client.get("/api/cv/file", headers={"X-Guest": "1"}).status_code == 403
+
+    owner = client.get("/api/cv", headers={"X-Access-Key": "secret"}).json()
+    assert owner == full
+
+
 def test_guest_header_does_not_excuse_a_wrong_key(monkeypatch):
     monkeypatch.setattr(api, "APP_ACCESS_KEY", "secret")
     headers = {"X-Guest": "1", "X-Access-Key": "wrong"}

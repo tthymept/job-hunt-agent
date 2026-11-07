@@ -291,5 +291,10 @@ th.cvhead,td.cvcell{text-align:center;}
 .locked-ghost{filter:blur(3px);opacity:.7;display:flex;flex-direction:column;gap:18px;padding:12px 4px;}
 .ghost-line{display:flex;gap:4%;}
 .ghost-line span{display:block;height:12px;border-radius:6px;background:var(--border);}
+/* Guest view of My CV: a blurred blank page in place of the preview */
+.pdf-page.locked-cv{aspect-ratio:1 / 1.414;padding:7% 8%;overflow:hidden;}
+.locked-cv .locked-ghost{gap:14px;}
+.locked-cv .ghost-line span{background:#d1d5db;}
+.locked-cv .locked-msg{color:#111827;align-items:flex-start;padding-top:22%;}
 .locked-msg{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap;
   color:var(--text);font-size:13.5px;text-align:center;}
