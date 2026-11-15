@@ -182,6 +182,11 @@ th.cvhead,td.cvcell{text-align:center;}
 .field-row textarea{resize:vertical;min-height:70px;}
 .field-grid{display:grid;grid-template-columns:1fr 1fr;gap:0 14px;}
 .modal-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:6px;}
+.style-options{display:flex;flex-direction:column;gap:8px;margin-bottom:18px;}
+.style-option{display:flex;align-items:flex-start;gap:10px;padding:12px;border:1px solid var(--border);border-radius:8px;cursor:pointer;font-size:13.5px;}
+.style-option.selected{border-color:var(--accent);background:var(--accent-weak);}
+.style-option input{margin:3px 0 0;}
+.style-hint{display:block;color:var(--sub);font-size:12.5px;margin-top:2px;}
 .interest-list{display:flex;flex-direction:column;gap:8px;margin-bottom:18px;}
 .interest-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 12px;border:1px solid var(--border);border-radius:8px;}
 .interest-row.paused{opacity:.65;}

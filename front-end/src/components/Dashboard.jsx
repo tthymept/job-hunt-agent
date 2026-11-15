@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react'
 import { STATUS, ST_CLASS } from '../data'
 import Calendar from './Calendar'
+import SettingsModal from './SettingsModal'
 import { blockedForGuest } from '../api'
 import { locationGroup } from '../locationGroup'
 
@@ -145,6 +146,7 @@ export default function Dashboard({ jobs, hiddenJobCount, onUnlock, onStatusChan
     setLocationFilter('all')
   }
 
+  const [showSettings, setShowSettings] = useState(false)
   const [showColumns, setShowColumns] = useState(false)
   const [hiddenColumns, setHiddenColumns] = useState(loadHiddenColumns)
   const shownColumns = COLUMNS.filter(c => !hiddenColumns.includes(c.key))
@@ -174,9 +176,10 @@ export default function Dashboard({ jobs, hiddenJobCount, onUnlock, onStatusChan
         </div>
         <div className="actions">
           <button className="btn">⬇ Export</button>
-          <button className="btn">⚙ Settings</button>
+          <button className="btn" onClick={() => setShowSettings(true)}>⚙ Settings</button>
         </div>
       </div>
+      {showSettings && <SettingsModal onClose={() => setShowSettings(false)} />}
 
       <div className="urlbar">
         <input
