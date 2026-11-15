@@ -4,6 +4,7 @@ import { blockedForGuest } from '../api'
 import { locationGroup } from '../locationGroup'
 import SettingsModal from '../components/SettingsModal'
 import Calendar from './Calendar'
+import TabBar from './TabBar'
 import Icon from './Icon'
 import { parseDay, formatDay, daysUntil, daysLabel } from './dates'
 
@@ -159,7 +160,7 @@ function UpcomingDeadlines({ jobs, onOpenJob }) {
   )
 }
 
-export default function Dashboard({ jobs, hiddenJobCount, onUnlock, onStatusChange, onOpenDrawer, onUploadCv, onDeleteCv, onOpenManualModal, onLoadFromUrl }) {
+export default function Dashboard({ jobs, hiddenJobCount, tabs, activeTab, tabCounts, onSelectTab, tabActions, tabError, onDismissTabError, onUnlock, onStatusChange, onOpenDrawer, onUploadCv, onDeleteCv, onOpenManualModal, onLoadFromUrl }) {
   const [url, setUrl] = useState('')
   const [loadingUrl, setLoadingUrl] = useState(false)
   const [urlMessage, setUrlMessage] = useState(null)
@@ -173,6 +174,9 @@ export default function Dashboard({ jobs, hiddenJobCount, onUnlock, onStatusChan
     if (result.ok) setUrl('')
     else setUrlMessage(result.message)
   }
+
+  // A tab with adding turned off shows a notice in place of the add-a-job row
+  const addingOff = activeTab ? !activeTab.enabled : false
 
   const [stage, setStage] = useState('all')
   const [locationFilter, setLocationFilter] = useState('all')
@@ -248,6 +252,22 @@ export default function Dashboard({ jobs, hiddenJobCount, onUnlock, onStatusChan
       </div>
       {showSettings && <SettingsModal onClose={() => setShowSettings(false)} />}
 
+      <TabBar
+        tabs={tabs}
+        activeId={activeTab?.id}
+        counts={tabCounts}
+        onSelect={onSelectTab}
+        actions={tabActions}
+        error={tabError}
+        onDismissError={onDismissTabError}
+      />
+
+      {addingOff ? (
+        <div className="addbar-off">
+          <span><b>Adding jobs is turned off for this tab.</b> You can still view and edit everything in it.</span>
+          <button className="btn" onClick={() => tabActions.setEnabled(activeTab.id, true)}>Turn on adding</button>
+        </div>
+      ) : (
       <div className="addbar">
         <div className="inputwrap grow">
           <Icon name="link" />
@@ -266,6 +286,7 @@ export default function Dashboard({ jobs, hiddenJobCount, onUnlock, onStatusChan
         <span className="addbar-or">or</span>
         <button className="btn" onClick={onOpenManualModal}><Icon name="plus" /> Add manually</button>
       </div>
+      )}
       {urlMessage && <div className="url-msg" role="alert">{urlMessage}</div>}
 
       <div className="stages" role="group" aria-label="Filter by stage">
@@ -406,7 +427,7 @@ export default function Dashboard({ jobs, hiddenJobCount, onUnlock, onStatusChan
                 </tr>
               )}
               {jobs.length === 0 && (
-                <tr className="empty-row"><td colSpan={colSpan}>No tracked jobs yet. Paste a link above or add jobs from Explore.</td></tr>
+                <tr className="empty-row"><td colSpan={colSpan}>{addingOff ? 'No tracked jobs in this tab.' : 'No tracked jobs in this tab yet. Paste a link above or add jobs from Explore.'}</td></tr>
               )}
               {hiddenJobCount > 0 && <LockedRows onUnlock={onUnlock} colSpan={colSpan} />}
             </tbody>

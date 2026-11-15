@@ -219,6 +219,158 @@ def get_explore_locations():
     return [{"value": p, "label": p.title()} for p in sorted(places)]
 
 
+# ---------- Tracker tabs ----------
+# The dashboard is split into tabs (e.g. "Internships 2027", "Internships 2028").
+# Every tracked job belongs to one tab. A disabled tab can still be opened and
+# edited, but new jobs can't be added to it until it is enabled again.
+
+FIRST_TAB_NAME = "My jobs"
+MAX_TAB_NAME_CHARS = 40
+
+def default_tab(tabs: list[dict]) -> dict | None:
+    """The tab flagged as default, or the oldest one when none is flagged."""
+    if not tabs:
+        return None
+    flagged = [t for t in tabs if t.get("is_default")]
+    return (flagged or tabs)[0]
+
+def pick_target_tab(tabs: list[dict], requested_id: int | None) -> dict:
+    """The tab a new job goes into. With no tab requested (the classic look, or
+    only one tab to choose from) it is the default tab if that is enabled,
+    otherwise the first enabled one. Raises ValueError when it can't be used."""
+    if requested_id is not None:
+        tab = next((t for t in tabs if t["tab_id"] == requested_id), None)
+        if tab is None:
+            raise ValueError("That tab doesn't exist.")
+        if not tab["enabled"]:
+            raise ValueError("Adding jobs is turned off for that tab. Turn it on to add jobs there.")
+        return tab
+    enabled = [t for t in tabs if t["enabled"]]
+    if not enabled:
+        raise ValueError("Every tab has adding turned off. Turn it on for one tab first.")
+    chosen = default_tab(tabs)
+    return chosen if chosen["enabled"] else enabled[0]
+
+def clean_tab_name(name: str) -> str:
+    cleaned = " ".join((name or "").split())
+    if not cleaned:
+        raise HTTPException(status_code=400, detail="Give the tab a name.")
+    if len(cleaned) > MAX_TAB_NAME_CHARS:
+        raise HTTPException(status_code=400, detail=f"Tab names can be up to {MAX_TAB_NAME_CHARS} characters.")
+    return cleaned
+
+def name_taken(tabs: list[dict], name: str, except_id: int | None = None) -> bool:
+    """True when another tab already has this name. Upper and lower case count as the same."""
+    wanted = name.casefold()
+    return any(t["name"].casefold() == wanted for t in tabs if t["tab_id"] != except_id)
+
+def free_tab_name(tabs: list[dict], name: str, except_id: int | None = None) -> str:
+    cleaned = clean_tab_name(name)
+    if name_taken(tabs, cleaned, except_id):
+        raise HTTPException(status_code=400, detail=f'You already have a tab called "{cleaned}".')
+    return cleaned
+
+def load_tabs(uid: int) -> list[dict]:
+    """The user's tabs, oldest first. Creates the first tab if there is none yet."""
+    tabs = (
+        supabase.table("tracker_tabs").select("*").eq("user_id", uid).order("tab_id").execute().data
+    ) or []
+    if not tabs:
+        tabs = supabase.table("tracker_tabs").insert({
+            "user_id": uid, "name": FIRST_TAB_NAME, "is_default": True,
+        }).execute().data
+    return tabs
+
+def tabs_payload(tabs: list[dict]) -> list[dict]:
+    default_id = default_tab(tabs)["tab_id"]
+    return [
+        {"id": t["tab_id"], "name": t["name"], "enabled": t["enabled"], "isDefault": t["tab_id"] == default_id}
+        for t in tabs
+    ]
+
+def target_tab_id(uid: int, requested_id: int | None) -> int:
+    try:
+        return pick_target_tab(load_tabs(uid), requested_id)["tab_id"]
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+def find_tab(tabs: list[dict], tab_id: int) -> dict:
+    tab = next((t for t in tabs if t["tab_id"] == tab_id), None)
+    if tab is None:
+        raise HTTPException(status_code=404, detail="Tab not found.")
+    return tab
+
+@app.get("/api/tabs")
+def list_tabs():
+    return tabs_payload(load_tabs(get_current_user_id()))
+
+class NewTabBody(BaseModel):
+    name: str
+
+@app.post("/api/tabs")
+def create_tab(body: NewTabBody):
+    uid = get_current_user_id()
+    tabs = load_tabs(uid)  # also makes sure the first tab exists before a second one is added
+    supabase.table("tracker_tabs").insert({"user_id": uid, "name": free_tab_name(tabs, body.name)}).execute()
+    return tabs_payload(load_tabs(uid))
+
+class TabUpdateBody(BaseModel):
+    name: str | None = None
+    enabled: bool | None = None
+    is_default: bool | None = None
+
+@app.patch("/api/tabs/{tab_id}")
+def update_tab(tab_id: int, body: TabUpdateBody):
+    uid = get_current_user_id()
+    tabs = load_tabs(uid)
+    tab = find_tab(tabs, tab_id)
+
+    changes = {}
+    if body.name is not None:
+        changes["name"] = free_tab_name(tabs, body.name, except_id=tab_id)
+    if body.enabled is not None:
+        others_enabled = any(t["enabled"] for t in tabs if t["tab_id"] != tab_id)
+        if not body.enabled and not others_enabled:
+            raise HTTPException(status_code=400, detail="At least one tab has to accept new jobs.")
+        changes["enabled"] = body.enabled
+    if body.is_default:
+        # Only one tab is the default: clear the flag everywhere, then set it here
+        supabase.table("tracker_tabs").update({"is_default": False}).eq("user_id", uid).execute()
+        changes["is_default"] = True
+    if changes:
+        supabase.table("tracker_tabs").update(changes).eq("tab_id", tab["tab_id"]).eq("user_id", uid).execute()
+    return tabs_payload(load_tabs(uid))
+
+@app.delete("/api/tabs/{tab_id}")
+def delete_tab(tab_id: int):
+    uid = get_current_user_id()
+    tabs = load_tabs(uid)
+    find_tab(tabs, tab_id)
+    if len(tabs) == 1:
+        raise HTTPException(status_code=400, detail="You need at least one tab.")
+    in_tab = (
+        supabase.table("user_job_tracking")
+        .select("tracking_id")
+        .eq("user_id", uid)
+        .eq("tab_id", tab_id)
+        .neq("status", "Untracked")
+        .limit(1)
+        .execute()
+        .data
+    )
+    if in_tab:
+        raise HTTPException(status_code=400, detail="Only an empty tab can be deleted. Move or untrack its jobs first.")
+    # Untracked rows that pointed here lose their tab (the column is ON DELETE SET NULL)
+    supabase.table("tracker_tabs").delete().eq("tab_id", tab_id).eq("user_id", uid).execute()
+
+    remaining = load_tabs(uid)
+    if not any(t["enabled"] for t in remaining):
+        # The deleted tab was the only one accepting jobs: reopen the default one
+        supabase.table("tracker_tabs").update({"enabled": True}).eq("tab_id", default_tab(remaining)["tab_id"]).execute()
+        remaining = load_tabs(uid)
+    return tabs_payload(remaining)
+
+
 # ---------- Dashboard / Tracker ----------
 
 def reshape_tracker_row(row: dict) -> dict:
@@ -277,7 +429,9 @@ def get_tracker(request: Request, response: Response):
         total = min(total, GUEST_TRACKER_LIMIT + 1)
         rows = rows[:GUEST_TRACKER_LIMIT]
     response.headers["X-Total-Count"] = str(total)
-    return [reshape_tracker_row(row) for row in rows]
+    # A row with no tab (added before tabs existed, or its tab was deleted) shows in the default tab
+    fallback_tab_id = default_tab(load_tabs(uid))["tab_id"]
+    return [{**reshape_tracker_row(row), "tabId": row.get("tab_id") or fallback_tab_id} for row in rows]
 
 class StatusBody(BaseModel):
     status: str
@@ -312,6 +466,25 @@ def update_status(tracking_id: int, body: StatusBody):
         "submitted_at": submitted_at,
     }).eq("tracking_id", tracking_id).eq("user_id", uid).execute()
     return {"status": "ok", "submittedAt": submitted_at}
+
+class MoveTabBody(BaseModel):
+    tab_id: int
+
+@app.patch("/api/tracker/{tracking_id}/tab")
+def move_to_tab(tracking_id: int, body: MoveTabBody):
+    uid = get_current_user_id()
+    tab_id = target_tab_id(uid, body.tab_id)
+    moved = (
+        supabase.table("user_job_tracking")
+        .update({"tab_id": tab_id})
+        .eq("tracking_id", tracking_id)
+        .eq("user_id", uid)
+        .execute()
+        .data
+    )
+    if not moved:
+        raise HTTPException(status_code=404, detail="Tracked job not found.")
+    return {"status": "ok", "tabId": tab_id}
 
 # Wire CV
 @app.post("/api/tracker/{tracking_id}/generate-bullets")
@@ -393,7 +566,7 @@ def delete_my_cv(tracking_id: int):
     supabase.table("user_job_tracking").update({"my_upload_path": None}).eq("tracking_id", tracking_id).eq("user_id", uid).execute()
     return {"status": "deleted"}
 
-def track_job_for_user(uid: int, job_id: str) -> str:
+def track_job_for_user(uid: int, job_id: str, tab_id: int) -> str:
     existing = (
         supabase.table("user_job_tracking")
         .select("tracking_id, status")
@@ -408,6 +581,7 @@ def track_job_for_user(uid: int, job_id: str) -> str:
                 "status": "Saved / Not Applied",
                 "status_updated_at": datetime.now(timezone.utc).isoformat(),
                 "submitted_at": None,
+                "tab_id": tab_id,
             }).eq("tracking_id", row["tracking_id"]).execute()
             return "retracked"
         return "already_tracked"
@@ -415,16 +589,18 @@ def track_job_for_user(uid: int, job_id: str) -> str:
         "user_id": uid,
         "job_id": job_id,
         "status": "Saved / Not Applied",
+        "tab_id": tab_id,
     }).execute()
     return "added"
 
 class AddTrackerBody(BaseModel):
     job_id: str
+    tab_id: int | None = None  # None: the server picks the tab (see pick_target_tab)
 
 @app.post("/api/tracker")
 def add_to_tracker(body: AddTrackerBody):
     uid = get_current_user_id()
-    status = track_job_for_user(uid, body.job_id)
+    status = track_job_for_user(uid, body.job_id, target_tab_id(uid, body.tab_id))
     return {"status": status}
 
 
@@ -438,10 +614,12 @@ class ManualJobBody(BaseModel):
     apply_link: str | None = None
     skills: list[str] = []
     description: str | None = None
+    tab_id: int | None = None  # only used when adding; editing never moves a job
 
 @app.post("/api/jobs/manual")
 def add_manual_job(body: ManualJobBody):
     uid = get_current_user_id()
+    tab_id = target_tab_id(uid, body.tab_id)
     job_id = f"manual-{uuid.uuid4()}"
 
     supabase.table("jobs").insert({
@@ -460,7 +638,7 @@ def add_manual_job(body: ManualJobBody):
         "job_posted_at_datetime_utc": datetime.now(timezone.utc).isoformat(),
     }).execute()
 
-    track_job_for_user(uid, job_id)
+    track_job_for_user(uid, job_id, tab_id)
     return {"status": "added", "job_id": job_id}
 
 # editable field
@@ -690,11 +868,13 @@ def clean_date(value) -> str | None:
 
 class UrlJobBody(BaseModel):
     url: str
+    tab_id: int | None = None
 
 
 @app.post("/api/jobs/from-url")
 def add_job_from_url(body: UrlJobBody):
     uid = get_current_user_id()
+    tab_id = target_tab_id(uid, body.tab_id)
     url = body.url.strip()
 
     try:
@@ -747,7 +927,7 @@ def add_job_from_url(body: UrlJobBody):
             "job_posted_at_datetime_utc": datetime.now(timezone.utc).isoformat(),
         }).execute()
 
-    status = track_job_for_user(uid, job_id)
+    status = track_job_for_user(uid, job_id, tab_id)
     return {"status": status, "job_id": job_id}
 
 

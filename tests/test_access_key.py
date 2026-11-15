@@ -45,10 +45,12 @@ def test_guest_sees_only_the_first_tracked_jobs(monkeypatch):
         data = rows
 
     monkeypatch.setattr(api.supabase, "table", lambda name: FakeQuery())
-    monkeypatch.setattr(api, "reshape_tracker_row", lambda row: row["tracking_id"])
+    monkeypatch.setattr(api, "reshape_tracker_row", lambda row: {"id": row["tracking_id"]})
+    monkeypatch.setattr(api, "load_tabs", lambda uid: [{"tab_id": 7, "name": "My jobs", "enabled": True, "is_default": True}])
 
     guest = client.get("/api/tracker", headers={"X-Guest": "1"})
-    assert guest.json() == [0, 1, 2, 3]
+    assert [job["id"] for job in guest.json()] == [0, 1, 2, 3]
+    assert {job["tabId"] for job in guest.json()} == {7}  # rows without a tab show in the default one
     assert guest.headers["X-Total-Count"] == "5"  # "more exist", not the real total
 
     owner = client.get("/api/tracker", headers={"X-Access-Key": "secret"})

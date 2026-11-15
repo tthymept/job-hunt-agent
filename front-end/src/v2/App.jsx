@@ -4,10 +4,11 @@ import Dashboard from './Dashboard'
 import Explore from './Explore'
 import CVPage from './CVPage'
 import Drawer from './Drawer'
+import TabPickerModal from './TabPickerModal'
 import JobFormModal from '../components/JobFormModal'
 import AccessKeyGate from './AccessKeyGate'
 import LogoutModal from '../components/LogoutModal'
-import { apiFetch, readJson, isGuest, blockedForGuest } from '../api'
+import { apiFetch, readJson, isGuest, blockedForGuest, JSON_HEADERS } from '../api'
 
 const EXPLORE_PAGE_SIZE = 20
 
@@ -21,7 +22,15 @@ export default function App() {
   const [hiddenJobCount, setHiddenJobCount] = useState(0) // tracked jobs a guest can't see
   const [drawerJob, setDrawerJob] = useState(null)
   const [generatingId, setGeneratingId] = useState(null)
-  const [jobModal, setJobModal] = useState(null) // null | { mode: 'add' } | { mode: 'edit', job }
+  // null | { mode: 'add', tabId, prefill } | { mode: 'edit', job }
+  const [jobModal, setJobModal] = useState(null)
+
+  // Dashboard tabs: [{ id, name, enabled, isDefault }]. Every tracked job has a tabId.
+  const [tabs, setTabs] = useState([])
+  const [activeTabId, setActiveTabId] = useState(null)
+  const [tabError, setTabError] = useState(null)
+  // While the "which tab?" popup is open: { resolve }, called with the chosen tab id or undefined
+  const [tabPicker, setTabPicker] = useState(null)
 
   const [exploreJobs, setExploreJobs] = useState([])
   const [explorePage, setExplorePage] = useState(1)
@@ -44,6 +53,13 @@ export default function App() {
       })
   }
 
+  // Stores a fresh tab list. If the tab being viewed is gone (or none is chosen
+  // yet), the default tab becomes the one on screen.
+  function applyTabs(list) {
+    setTabs(list)
+    setActiveTabId(prev => (list.some(t => t.id === prev) ? prev : (list.find(t => t.isDefault) || list[0])?.id ?? null))
+  }
+
   // apiFetch fires this event on any 401 reply
   useEffect(() => {
     const lock = () => setLocked(true)
@@ -61,6 +77,10 @@ export default function App() {
       .then(readJson)
       .then(setMe)
       .catch(err => console.error('Failed to load user:', err))
+    apiFetch(`/api/tabs`)
+      .then(readJson)
+      .then(applyTabs)
+      .catch(err => console.error('Failed to load tabs:', err))
   }, [])
 
   // Refetches whenever Dashboard becomes the active tab - simplest way
@@ -87,6 +107,87 @@ export default function App() {
       .catch(err => console.error('Failed to load jobs:', err))
   }, [explorePage, exploreSort, exploreFilters])
 
+  // ---------- Tabs ----------
+
+  // Sends one tab change. Every tab endpoint answers with the full tab list.
+  // Returns that list, or null (with a message under the tab bar) when it failed.
+  async function tabRequest(method, path, body) {
+    if (blockedForGuest()) return null
+    setTabError(null)
+    try {
+      const res = await apiFetch(path, {
+        method,
+        headers: JSON_HEADERS,
+        body: body ? JSON.stringify(body) : undefined,
+      })
+      // A server crash answers with plain text, not JSON
+      const data = await res.json().catch(() => null)
+      if (!res.ok || !data) throw new Error(data?.detail || 'That change could not be saved. Check that the backend is running.')
+      applyTabs(data)
+      return data
+    } catch (err) {
+      setTabError(err.message)
+      return null
+    }
+  }
+
+  const tabActions = {
+    async create(name) {
+      const list = await tabRequest('POST', `/api/tabs`, { name })
+      // The new tab has the highest id: show it straight away
+      if (list) setActiveTabId(Math.max(...list.map(t => t.id)))
+      return Boolean(list)
+    },
+    async rename(id, name) {
+      return Boolean(await tabRequest('PATCH', `/api/tabs/${id}`, { name }))
+    },
+    setDefault(id) {
+      return tabRequest('PATCH', `/api/tabs/${id}`, { is_default: true })
+    },
+    setEnabled(id, enabled) {
+      return tabRequest('PATCH', `/api/tabs/${id}`, { enabled })
+    },
+    remove(id) {
+      return tabRequest('DELETE', `/api/tabs/${id}`)
+    },
+  }
+
+  // Works out which tab a new job goes into. With one tab accepting jobs there
+  // is nothing to ask. With more, the "which tab?" popup opens.
+  // Resolves to { tabId }, or null when the popup was cancelled.
+  function chooseTab() {
+    const open = tabs.filter(t => t.enabled)
+    // tabId null (tabs not loaded yet) lets the server pick the default tab
+    if (open.length <= 1) return Promise.resolve({ tabId: open[0]?.id ?? null })
+    return new Promise(resolve => setTabPicker({ resolve }))
+  }
+
+  function closeTabPicker(tabId) {
+    tabPicker.resolve(tabId === undefined ? null : { tabId })
+    setTabPicker(null)
+  }
+
+  function handleMoveJob(trackingId, tabId) {
+    if (blockedForGuest()) return
+    apiFetch(`/api/tracker/${trackingId}/tab`, {
+      method: 'PATCH',
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ tab_id: tabId }),
+    })
+      .then(async res => {
+        const data = await res.json()
+        if (!res.ok) throw new Error(data.detail || 'The job could not be moved.')
+        setJobs(prev => prev.map(j => (j.trackingId === trackingId ? { ...j, tabId: data.tabId } : j)))
+        setDrawerJob(prev => (prev && prev.trackingId === trackingId ? { ...prev, tabId: data.tabId } : prev))
+      })
+      .catch(err => {
+        console.error('Failed to move job:', err)
+        alert(err.message)
+      })
+  }
+
+  // ---------- Jobs ----------
+
   function handleStatusChange(trackingId, status) {
     if (blockedForGuest()) return
     if (status === 'Untracked') {
@@ -109,14 +210,16 @@ export default function App() {
       })
   }
 
-  function handleAddToMyJobs(index) {
+  async function handleAddToMyJobs(index) {
     if (blockedForGuest()) return
     const job = exploreJobs[index]
-    setExploreJobs(prev => prev.map((j, i) => (i === index ? { ...j, trackState: 'added' } : j)))
+    const choice = await chooseTab()
+    if (!choice) return
+    setExploreJobs(prev => prev.map(j => (j.jobId === job.jobId ? { ...j, trackState: 'added' } : j)))
     apiFetch(`/api/tracker`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ job_id: job.jobId }),
+      body: JSON.stringify({ job_id: job.jobId, tab_id: choice.tabId }),
     }).catch(err => console.error('Failed to add job:', err))
   }
 
@@ -166,23 +269,36 @@ export default function App() {
       })
   }
 
+  async function handleOpenManualModal() {
+    if (blockedForGuest()) return
+    const choice = await chooseTab()
+    if (choice) setJobModal({ mode: 'add', tabId: choice.tabId })
+  }
+
   // Returns { ok, message } so the Dashboard can show feedback under the URL bar
   async function handleLoadFromUrl(url) {
     if (blockedForGuest()) return { ok: false }
+    const choice = await chooseTab()
+    if (!choice) return { ok: false }
     try {
       const res = await apiFetch(`/api/jobs/from-url`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url }),
+        body: JSON.stringify({ url, tab_id: choice.tabId }),
       })
       if (res.status === 422) {
         const data = await res.json()
         // Couldn't read the page: open the manual form with the link filled in
-        setJobModal({ mode: 'add', prefill: { apply_link: url } })
+        setJobModal({ mode: 'add', tabId: choice.tabId, prefill: { apply_link: url } })
         return { ok: false, message: `${data.detail} I opened the form with your link filled in.` }
+      }
+      if (res.status === 400) {
+        const data = await res.json()
+        return { ok: false, message: data.detail }
       }
       if (!res.ok) throw new Error('Request failed')
       await loadTracker()
+      if (choice.tabId) setActiveTabId(choice.tabId) // show the tab the job went into
       return { ok: true }
     } catch {
       return { ok: false, message: 'Something went wrong. Check that the backend is running.' }
@@ -191,6 +307,13 @@ export default function App() {
 
   if (locked) return <AccessKeyGate />
 
+  const activeTab = tabs.find(t => t.id === activeTabId) || null
+  // Until the tabs have loaded there is nothing to filter by, so show every job
+  const tabJobs = activeTab ? jobs.filter(j => j.tabId === activeTab.id) : jobs
+  const tabCounts = {}
+  for (const j of jobs) tabCounts[j.tabId] = (tabCounts[j.tabId] || 0) + 1
+  const openTabs = tabs.filter(t => t.enabled)
+
   return (
     <div className={`app${drawerJob ? ' drawer-open' : ''}`}>
       <Sidebar view={view} setView={setView} me={me} guest={isGuest()} onUnlock={() => setGuestBlocked(true)} onLogout={() => setLogoutOpen(true)} />
@@ -198,14 +321,21 @@ export default function App() {
       <main className="main">
         {view === 'dashboard' && (
           <Dashboard
-            jobs={jobs}
+            jobs={tabJobs}
             hiddenJobCount={hiddenJobCount}
+            tabs={tabs}
+            activeTab={activeTab}
+            tabCounts={tabCounts}
+            onSelectTab={setActiveTabId}
+            tabActions={tabActions}
+            tabError={tabError}
+            onDismissTabError={() => setTabError(null)}
             onUnlock={() => setGuestBlocked(true)}
             onStatusChange={handleStatusChange}
             onOpenDrawer={setDrawerJob}
             onUploadCv={handleUploadCv}
             onDeleteCv={handleDeleteCv}
-            onOpenManualModal={() => setJobModal({ mode: 'add' })}
+            onOpenManualModal={handleOpenManualModal}
             onLoadFromUrl={handleLoadFromUrl}
           />
         )}
@@ -230,6 +360,8 @@ export default function App() {
       <div className="overlay" onClick={() => setDrawerJob(null)} />
       <Drawer
         job={drawerJob}
+        tabs={tabs}
+        onMoveJob={handleMoveJob}
         onEdit={job => setJobModal({ mode: 'edit', job })}
         onClose={() => setDrawerJob(null)}
         onGenerate={handleGenerateBullets}
@@ -241,9 +373,12 @@ export default function App() {
         mode={jobModal?.mode}
         initial={jobModal?.job?.edit || jobModal?.prefill}
         trackingId={jobModal?.job?.trackingId}
+        tabId={jobModal?.tabId}
         onClose={() => setJobModal(null)}
         onSaved={() => {
+          const addedTo = jobModal?.mode === 'add' ? jobModal.tabId : null
           setJobModal(null)
+          if (addedTo) setActiveTabId(addedTo) // show the tab the job went into
           // Reload, then refresh the open drawer so it shows the edited values
           loadTracker().then(data =>
             setDrawerJob(prev => (prev ? data.find(j => j.trackingId === prev.trackingId) || prev : prev))
@@ -251,6 +386,14 @@ export default function App() {
         }}
       />
 
+      {tabPicker && (
+        <TabPickerModal
+          tabs={openTabs}
+          initialId={(openTabs.find(t => t.isDefault) || openTabs[0]).id}
+          onPick={closeTabPicker}
+          onCancel={() => closeTabPicker(undefined)}
+        />
+      )}
       {guestBlocked && <AccessKeyGate blocked onClose={() => setGuestBlocked(false)} />}
       {logoutOpen && <LogoutModal guest={isGuest()} onClose={() => setLogoutOpen(false)} />}
     </div>

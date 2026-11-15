@@ -22,7 +22,8 @@ function toForm(edit) {
   }
 }
 
-export default function JobFormModal({ open, mode, initial, trackingId, onClose, onSaved }) {
+// tabId (new look only): the dashboard tab a new job goes into. Left out, the server picks the default tab.
+export default function JobFormModal({ open, mode, initial, trackingId, tabId, onClose, onSaved }) {
   const isEdit = mode === 'edit'
   const [form, setForm] = useState(EMPTY_FORM)
   const [submitting, setSubmitting] = useState(false)
@@ -66,6 +67,7 @@ export default function JobFormModal({ open, mode, initial, trackingId, onClose,
         apply_link: form.applyLink || null,
         skills: form.skills ? form.skills.split(',').map(s => s.trim()).filter(Boolean) : [],
         description: form.description || null,
+        tab_id: tabId ?? null,
       }),
     })
       .then(res => {

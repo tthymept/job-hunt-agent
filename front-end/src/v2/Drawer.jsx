@@ -4,7 +4,7 @@ import { ST_CLASS } from '../data'
 import Icon from './Icon'
 import { prettyDay } from './dates'
 
-export default function Drawer({ job, onClose, onGenerate, onEdit, generating }) {
+export default function Drawer({ job, tabs = [], onMoveJob, onClose, onGenerate, onEdit, generating }) {
   // Jobs opened from Explore are flagged readOnly: no CV suggestions and no editing
   const readOnly = job?.readOnly
 
@@ -43,6 +43,21 @@ export default function Drawer({ job, onClose, onGenerate, onEdit, generating })
               <dd>{value || '—'}</dd>
             </div>
           ))}
+          {/* Tracked jobs can be moved to another tab, as long as that tab accepts new jobs */}
+          {job && !readOnly && tabs.length > 1 && (
+            <div className="facts-wide">
+              <dt><label htmlFor="drawerTab">Tab</label></dt>
+              <dd>
+                <select id="drawerTab" value={job.tabId} onChange={e => onMoveJob(job.trackingId, Number(e.target.value))}>
+                  {tabs.map(t => (
+                    <option key={t.id} value={t.id} disabled={!t.enabled && t.id !== job.tabId}>
+                      {t.name}{t.enabled ? '' : ' (adding off)'}
+                    </option>
+                  ))}
+                </select>
+              </dd>
+            </div>
+          )}
         </dl>
 
         <h4>Required skills</h4>
