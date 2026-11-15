@@ -1,0 +1,217 @@
+import { useState, useEffect } from 'react'
+
+import { API, apiFetch, readJson, accessKeyHeaders, blockedForGuest } from '../api'
+import PdfViewer from '../components/PdfViewer'
+import Icon from './Icon'
+
+function formatDate(iso) {
+  if (!iso) return ''
+  return new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
+}
+
+// Line widths for the blurred page a guest sees: name, contact line, then sections
+const GHOST_CV_LINES = [
+  '34%', '62%',
+  '18%', '92%', '80%', '56%',
+  '22%', '88%', '84%', '90%', '70%',
+  '26%', '94%', '86%', '90%', '78%', '88%', '64%',
+]
+
+// The PDF and its text never reach a guest, so this stands in for the preview
+function LockedCv() {
+  return (
+    <div className="card pdf-card">
+      <div className="pdf-pages">
+        <div className="pdf-page locked locked-cv">
+          <div className="locked-ghost" aria-hidden="true">
+            {GHOST_CV_LINES.map((width, i) => (
+              <div className="ghost-line" key={i} style={i < 2 ? { justifyContent: 'center' } : undefined}>
+                <span style={{ width }} />
+              </div>
+            ))}
+          </div>
+          <div className="locked-msg">
+            <span className="locked-text"><Icon name="lock" size={15} /> <b>CV preview</b> hidden in guest view</span>
+            <button className="btn sm primary" onClick={blockedForGuest}>Enter access key</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+export default function CVPage() {
+  // null while loading, { exists: false } when no CV, otherwise the saved CV
+  const [cv, setCv] = useState(null)
+  const [uploading, setUploading] = useState(false)
+  const [message, setMessage] = useState(null)
+
+  // Load the saved CV from the backend every time this page opens,
+  // so it is still there after a reload or switching tabs
+  useEffect(() => {
+    apiFetch(`/api/cv`)
+      .then(readJson)
+      .then(setCv)
+      .catch(() => setMessage('Could not load your CV. Is the backend running?'))
+  }, [])
+
+  async function uploadFile(file) {
+    if (!file || blockedForGuest()) return
+    if (!file.name.toLowerCase().endsWith('.pdf')) {
+      setMessage('Please upload a PDF file.')
+      return
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      setMessage('That file is over 10 MB.')
+      return
+    }
+    setUploading(true)
+    setMessage(null)
+    const formData = new FormData()
+    formData.append('file', file)
+    try {
+      const res = await apiFetch(`/api/cv`, { method: 'POST', body: formData })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.detail || 'Upload failed')
+      setCv(data)
+      if (data.warning) setMessage(data.warning)
+    } catch (err) {
+      setMessage(err.message)
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  function handleFileChange(e) {
+    uploadFile(e.target.files[0])
+    e.target.value = '' // lets the same file be picked again later
+  }
+
+  // Stops the file picker from opening for a guest, who can't upload anyway
+  function guardPicker(e) {
+    if (blockedForGuest()) e.preventDefault()
+  }
+
+  function handleDrop(e) {
+    e.preventDefault()
+    uploadFile(e.dataTransfer.files[0])
+  }
+
+  function downloadCv() {
+    if (blockedForGuest()) return
+    if (cv?.downloadUrl) window.open(cv.downloadUrl, '_blank')
+  }
+
+  const hasCv = cv?.exists
+  const locked = cv?.locked // guest view: the file details only, no preview or text
+  const sections = cv?.structure?.sections || []
+  const fileMeta = [
+    cv?.updatedAt && `Updated ${formatDate(cv.updatedAt)}`,
+    cv?.sizeKb && `${cv.sizeKb} KB`,
+  ].filter(Boolean).join(' · ')
+
+  return (
+    <section>
+      <div className="pagehead">
+        <div>
+          <h1>My CV</h1>
+          <p>Upload one master CV to preview, download, and tailor for applications.</p>
+        </div>
+        <button className="btn primary" disabled={!hasCv} onClick={downloadCv}><Icon name="download" /> Download</button>
+      </div>
+
+      <label
+        className="dropzone"
+        htmlFor="fileInput"
+        style={{ display: 'block' }}
+        onClick={guardPicker}
+        onDragOver={e => e.preventDefault()}
+        onDrop={handleDrop}
+      >
+        <div className="ic"><Icon name="upload" size={22} /></div>
+        <div>
+          <strong>{uploading ? 'Uploading and reading your CV…' : <>Drop your CV here or <u>browse files</u></>}</strong>
+        </div>
+        <div style={{ fontSize: 12, marginTop: 4 }}>PDF · Maximum 10 MB</div>
+        <input
+          id="fileInput"
+          type="file"
+          style={{ display: 'none' }}
+          accept="application/pdf,.pdf"
+          disabled={uploading}
+          onChange={handleFileChange}
+        />
+      </label>
+
+      {message && <div style={{ color: '#991b1b', fontSize: 13, margin: '12px 0' }}>{message}</div>}
+
+      {hasCv && (
+        <div className="fileinfo">
+          <div>
+            <span className="name"><Icon name="file" /> {cv.fileName}</span>
+            {fileMeta && <span className="sub">{fileMeta}</span>}
+          </div>
+          <div className="actions">
+            <label className="btn sm" htmlFor="fileInput" style={{ cursor: 'pointer' }} onClick={guardPicker}><Icon name="refresh" size={13} /> Replace</label>
+            <button className="btn sm" onClick={downloadCv}><Icon name="download" size={13} /> Download</button>
+          </div>
+        </div>
+      )}
+
+      {cv && !hasCv && (
+        <div className="card" style={{ padding: 30, textAlign: 'center', color: 'var(--sub)', fontSize: 13.5 }}>
+          No CV uploaded yet. Upload a PDF above and a preview will appear here.
+        </div>
+      )}
+
+      {hasCv && locked && <LockedCv />}
+
+      {hasCv && !locked && (
+        <div className="card pdf-card">
+          {/* updatedAt in the URL makes the browser fetch the new file after a replace */}
+          <PdfViewer
+            url={`${API}/api/cv/file?v=${encodeURIComponent(cv.updatedAt || '')}`}
+            headers={accessKeyHeaders()}
+          />
+        </div>
+      )}
+
+      {hasCv && !locked && sections.length === 0 && (
+        <div className="card" style={{ padding: 20, textAlign: 'center', color: 'var(--sub)', fontSize: 13.5, marginTop: 16 }}>
+          Your CV is saved, but its text hasn't been read yet, so tailoring won't work. Replace it to try again.
+        </div>
+      )}
+
+      {hasCv && sections.length > 0 && (
+        <details className="cv-text">
+          <summary>Text read from your CV (what the tailor agent works from)</summary>
+          <div className="card" style={{ background: 'var(--row-hover)' }}>
+            <div className="resume">
+              {sections.map((s, i) => (
+                <div key={i}>
+                  <h3>{s.title}</h3>
+                  {(s.entries || []).map((e, j) => {
+                    const label = [e.heading, e.subheading].filter(Boolean).join(' — ')
+                    return (
+                      <div key={j}>
+                        {label && label !== s.title && (
+                          <div className="entry">
+                            {label}
+                            {e.dates && <span>{e.dates}</span>}
+                          </div>
+                        )}
+                        {e.bullets?.length > 0 && (
+                          <ul>{e.bullets.map((b, k) => <li key={k}>{b}</li>)}</ul>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              ))}
+            </div>
+          </div>
+        </details>
+      )}
+    </section>
+  )
+}
