@@ -120,11 +120,13 @@ def get_current_user_id() -> int:
     return 1
 
 @app.get("/api/me")
-def get_me():
+def get_me(request: Request):
     uid = get_current_user_id()
     rows = supabase.table("users").select("name, email").eq("user_id", uid).execute().data
     row = rows[0] if rows else {}
-    return {"name": row.get("name") or "", "email": row.get("email") or ""}
+    # A guest sees whose tracker this is, but not how to contact them
+    email = "" if is_guest(request) else row.get("email") or ""
+    return {"name": row.get("name") or "", "email": email}
 
 
 # ---------- Explore Jobs ----------
@@ -235,8 +237,8 @@ def default_tab(tabs: list[dict]) -> dict | None:
     return (flagged or tabs)[0]
 
 def pick_target_tab(tabs: list[dict], requested_id: int | None) -> dict:
-    """The tab a new job goes into. With no tab requested (the classic look, or
-    only one tab to choose from) it is the default tab if that is enabled,
+    """The tab a new job goes into. With no tab requested (only one tab to
+    choose from) it is the default tab if that is enabled,
     otherwise the first enabled one. Raises ValueError when it can't be used."""
     if requested_id is not None:
         tab = next((t for t in tabs if t["tab_id"] == requested_id), None)
@@ -384,6 +386,31 @@ def upload_slot(kind: str) -> tuple[str, str]:
         raise HTTPException(status_code=400, detail="Unknown upload kind.")
     return UPLOAD_KINDS[kind]
 
+MAX_UPLOAD_BYTES = 10 * 1024 * 1024
+
+# The file types a tracked job's CV or cover letter can be: extension -> (content type, first bytes)
+UPLOAD_TYPES = {
+    "pdf": ("application/pdf", b"%PDF"),
+    "docx": ("application/vnd.openxmlformats-officedocument.wordprocessingml.document", b"PK\x03\x04"),
+    "doc": ("application/msword", b"\xd0\xcf\x11\xe0"),
+}
+
+def check_upload(filename: str | None, contents: bytes) -> tuple[str, str]:
+    """The (extension, content type) to store a tracker upload with. The extension
+    comes from UPLOAD_TYPES, never straight from the filename, so it can't shape the
+    storage path. Raises 400 for other file types, empty or oversized files."""
+    ext = (filename or "").rsplit(".", 1)[-1].lower() if "." in (filename or "") else ""
+    if ext not in UPLOAD_TYPES:
+        raise HTTPException(status_code=400, detail="Please upload a PDF or Word file (.pdf, .doc, .docx).")
+    if not contents:
+        raise HTTPException(status_code=400, detail="That file is empty.")
+    if len(contents) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=400, detail="That file is over 10 MB.")
+    content_type, signature = UPLOAD_TYPES[ext]
+    if not contents.startswith(signature):
+        raise HTTPException(status_code=400, detail=f"That doesn't look like a valid .{ext} file.")
+    return ext, content_type
+
 def signed_upload_url(path: str | None) -> str | None:
     """A link to a stored file that works for an hour, or None when there is no file."""
     if not path:
@@ -394,11 +421,27 @@ def signed_upload_url(path: str | None) -> str | None:
     except Exception:
         return None
 
-def reshape_tracker_row(row: dict) -> dict:
+def reshape_tracker_row(row: dict, locked: bool = False) -> dict:
+    """locked (a guest is looking): leave out the uploaded files and the tailored
+    bullets, which are the owner's CV, and the edit form's fields."""
     job_raw = row.get("jobs") or {}
     overrides = row.get("overrides") or {}
     merged_raw = {**job_raw, **overrides}
     core = job_core_fields(merged_raw)
+
+    if locked:
+        return {
+            "trackingId": row["tracking_id"],
+            "jobId": row["job_id"],
+            "status": row.get("status") or "Saved / Not Applied",
+            "bullets": None,
+            "myUploadUrl": None,
+            "coverLetterUrl": None,
+            "submittedAt": row.get("submitted_at"),
+            "edit": None,
+            "locked": True,
+            **core,
+        }
 
     bullets = None
     tailored = row.get("tailored_cv")
@@ -439,13 +482,25 @@ def get_tracker(request: Request, response: Response):
         .data
     ) or []
     total = len(rows)
-    if is_guest(request):
+    guest = is_guest(request)
+    if guest:
         total = min(total, GUEST_TRACKER_LIMIT + 1)
         rows = rows[:GUEST_TRACKER_LIMIT]
     response.headers["X-Total-Count"] = str(total)
     # A row with no tab (added before tabs existed, or its tab was deleted) shows in the default tab
     fallback_tab_id = default_tab(load_tabs(uid))["tab_id"]
-    return [{**reshape_tracker_row(row), "tabId": row.get("tab_id") or fallback_tab_id} for row in rows]
+    return [
+        {**reshape_tracker_row(row, locked=guest), "tabId": row.get("tab_id") or fallback_tab_id}
+        for row in rows
+    ]
+
+# The statuses a tracked job can have: the dashboard's stages (STATUS in
+# front-end/src/data.js) plus Untracked, which hides the job from the dashboard
+VALID_STATUSES = {
+    "Saved / Not Applied", "Submitted", "Online Assignment",
+    "Interview Round 1", "Interview Round 2", "Offered", "Rejected",
+    "Untracked",
+}
 
 class StatusBody(BaseModel):
     status: str
@@ -461,6 +516,8 @@ def next_submitted_at(new_status: str, current: str | None, now: str) -> str | N
 
 @app.patch("/api/tracker/{tracking_id}/status")
 def update_status(tracking_id: int, body: StatusBody):
+    if body.status not in VALID_STATUSES:
+        raise HTTPException(status_code=400, detail="Unknown status.")
     uid = get_current_user_id()
     rows = (
         supabase.table("user_job_tracking")
@@ -546,7 +603,7 @@ async def upload_my_cv(tracking_id: int, file: UploadFile = File(...), kind: str
     uid = get_current_user_id()
     rows = (
         supabase.table("user_job_tracking")
-        .select("job_id")
+        .select(f"job_id, {column}")
         .eq("tracking_id", tracking_id)
         .eq("user_id", uid)
         .execute()
@@ -554,12 +611,20 @@ async def upload_my_cv(tracking_id: int, file: UploadFile = File(...), kind: str
     )
     if not rows:
         raise HTTPException(status_code=404, detail="Tracked job not found.")
+    # Read one byte past the limit: enough to tell the file is too big without loading all of it
+    contents = await file.read(MAX_UPLOAD_BYTES + 1)
+    ext, content_type = check_upload(file.filename, contents)
     job_id = rows[0]["job_id"]
-    ext = file.filename.rsplit(".", 1)[-1] if "." in file.filename else "pdf"
+    old_path = rows[0].get(column)
     path = f"{uid}/{folder}/{job_id}.{ext}"
-    contents = await file.read()
-    supabase.storage.from_("resumes").upload(path, contents, {"content-type": file.content_type, "upsert": "true"})
+    supabase.storage.from_("resumes").upload(path, contents, {"content-type": content_type, "upsert": "true"})
     supabase.table("user_job_tracking").update({column: path}).eq("tracking_id", tracking_id).eq("user_id", uid).execute()
+    if old_path and old_path != path:
+        # Replacing a .pdf with a .docx (or the other way) saved under a new name: drop the old file
+        try:
+            supabase.storage.from_("resumes").remove([old_path])
+        except Exception as e:
+            print(f"Couldn't remove the replaced upload {old_path}: {e}")
     return {"status": "uploaded", "path": path}
 
 @app.delete("/api/tracker/{tracking_id}/upload")

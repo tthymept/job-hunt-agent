@@ -1,7 +1,10 @@
 import pytest
+from fastapi import HTTPException
 
 from job_hunt_agent.api import (
+    MAX_UPLOAD_BYTES,
     NeedsManualEntry,
+    check_upload,
     check_url_is_safe,
     clean_date,
     editable_fields,
@@ -125,3 +128,23 @@ def test_jsonld_fields():
 def test_clean_date():
     assert clean_date("2026-12-01") == "2026-12-01"
     assert clean_date("1 Dec 2026") is None
+
+
+def test_check_upload_accepts_pdf_and_word_files():
+    assert check_upload("CV Final.PDF", b"%PDF-1.7 ...") == ("pdf", "application/pdf")
+    assert check_upload("cover.docx", b"PK\x03\x04...")[0] == "docx"
+    assert check_upload("old.doc", b"\xd0\xcf\x11\xe0...")[0] == "doc"
+
+
+@pytest.mark.parametrize("filename, contents", [
+    ("cv.exe", b"MZ..."),
+    ("cv", b"%PDF-1.7"),
+    ("a.pdf/../x", b"%PDF-1.7"),
+    ("cv.pdf", b""),
+    ("cv.pdf", b"<html>not a pdf"),
+    ("cv.pdf", b"%PDF" + b"0" * MAX_UPLOAD_BYTES),
+], ids=["wrong-type", "no-extension", "path-in-extension", "empty", "content-mismatch", "over-10mb"])
+def test_check_upload_refuses_bad_files(filename, contents):
+    with pytest.raises(HTTPException) as e:
+        check_upload(filename, contents)
+    assert e.value.status_code == 400
