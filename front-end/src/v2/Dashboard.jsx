@@ -2,7 +2,6 @@ import { useRef, useState } from 'react'
 import { STATUS, ST_CLASS } from '../data'
 import { blockedForGuest } from '../api'
 import { locationGroup } from '../locationGroup'
-import SettingsModal from '../components/SettingsModal'
 import Calendar from './Calendar'
 import TabBar from './TabBar'
 import Icon from './Icon'
@@ -101,7 +100,7 @@ function UploadSlot({ job, slot, onUploadCv, onDeleteCv }) {
         ref={inputRef}
         type="file"
         style={{ display: 'none' }}
-        accept=".pdf,.docx"
+        accept=".pdf,.doc,.docx"
         onChange={e => {
           const file = e.target.files[0]
           if (file) onUploadCv(job.trackingId, file, slot.kind)
@@ -236,7 +235,6 @@ export default function Dashboard({ jobs, hiddenJobCount, tabs, activeTab, tabCo
     setSearch('')
   }
 
-  const [showSettings, setShowSettings] = useState(false)
   const [showColumns, setShowColumns] = useState(false)
   const [hiddenColumns, setHiddenColumns] = useState(loadHiddenColumns)
   const shownColumns = COLUMNS.filter(c => !hiddenColumns.includes(c.key))
@@ -269,9 +267,7 @@ export default function Dashboard({ jobs, hiddenJobCount, tabs, activeTab, tabCo
           <h1>Dashboard</h1>
           <p>Track every application, deadline, and tailored CV in one place.</p>
         </div>
-        <button className="btn" onClick={() => setShowSettings(true)}><Icon name="settings" /> Settings</button>
       </div>
-      {showSettings && <SettingsModal onClose={() => setShowSettings(false)} />}
 
       <TabBar
         tabs={tabs}
