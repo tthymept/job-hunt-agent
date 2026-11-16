@@ -69,7 +69,14 @@ export default function Drawer({ job, tabs = [], onMoveJob, onClose, onGenerate,
         <h4>Job description</h4>
         <JobDescription text={job?.jd} />
 
-        {!readOnly && (
+        {!readOnly && job?.locked && (
+          <>
+            <h4>Suggested bullets</h4>
+            {/* The server leaves the bullets out for a guest: they are the owner's CV */}
+            <div className="none">Hidden in guest mode. Enter the access key to see the tailored CV bullets.</div>
+          </>
+        )}
+        {!readOnly && !job?.locked && (
           <>
             <div className="drawer-row">
               <h4>Suggested bullets</h4>

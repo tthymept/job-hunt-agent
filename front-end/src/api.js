@@ -99,3 +99,12 @@ export async function readJson(res) {
   if (!res.ok) throw new Error(`Request failed (${res.status})`)
   return res.json()
 }
+
+// For actions: the JSON body, or an error carrying the server's message (its
+// `detail`) for any non-2xx reply. A server crash answers with plain text, not
+// JSON, so then the fallback message is used.
+export async function readResult(res, fallback) {
+  const data = await res.json().catch(() => null)
+  if (!res.ok || !data) throw new Error(data?.detail || fallback)
+  return data
+}

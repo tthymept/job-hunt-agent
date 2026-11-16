@@ -8,7 +8,7 @@ import TabPickerModal from './TabPickerModal'
 import JobFormModal from '../components/JobFormModal'
 import AccessKeyGate from './AccessKeyGate'
 import LogoutModal from '../components/LogoutModal'
-import { apiFetch, readJson, isGuest, blockedForGuest, JSON_HEADERS } from '../api'
+import { apiFetch, readJson, readResult, isGuest, blockedForGuest, JSON_HEADERS } from '../api'
 
 const EXPLORE_PAGE_SIZE = 20
 
@@ -215,12 +215,20 @@ export default function App() {
     const job = exploreJobs[index]
     const choice = await chooseTab()
     if (!choice) return
-    setExploreJobs(prev => prev.map(j => (j.jobId === job.jobId ? { ...j, trackState: 'added' } : j)))
+    const setTrackState = trackState =>
+      setExploreJobs(prev => prev.map(j => (j.jobId === job.jobId ? { ...j, trackState } : j)))
+    setTrackState('added')
     apiFetch(`/api/tracker`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ job_id: job.jobId, tab_id: choice.tabId }),
-    }).catch(err => console.error('Failed to add job:', err))
+    })
+      .then(res => readResult(res, 'The job could not be added.'))
+      .catch(err => {
+        console.error('Failed to add job:', err)
+        setTrackState(job.trackState) // back to Add, so it can be tried again
+        alert(err.message)
+      })
   }
 
   function handleSortChange(newSort) {
@@ -257,17 +265,23 @@ export default function App() {
     const formData = new FormData()
     formData.append('file', file)
     apiFetch(`/api/tracker/${trackingId}/upload?kind=${kind}`, { method: 'POST', body: formData })
+      .then(res => readResult(res, 'The file could not be uploaded.'))
       .then(() => loadTracker())
-      .catch(err => console.error('Failed to upload file:', err))
+      .catch(err => {
+        console.error('Failed to upload file:', err)
+        alert(err.message)
+      })
   }
 
   function handleDeleteCv(trackingId, kind = 'cv') {
     const field = kind === 'cover_letter' ? 'coverLetterUrl' : 'myUploadUrl'
     setJobs(prev => prev.map(j => (j.trackingId === trackingId ? { ...j, [field]: null } : j)))
     apiFetch(`/api/tracker/${trackingId}/upload?kind=${kind}`, { method: 'DELETE' })
+      .then(res => readResult(res, 'The file could not be deleted.'))
       .catch(err => {
-        console.error('Failed to delete CV:', err)
-        loadTracker()
+        console.error('Failed to delete file:', err)
+        alert(err.message)
+        loadTracker() // the file is still there: show it again
       })
   }
 
@@ -364,7 +378,7 @@ export default function App() {
         job={drawerJob}
         tabs={tabs}
         onMoveJob={handleMoveJob}
-        onEdit={job => setJobModal({ mode: 'edit', job })}
+        onEdit={job => !blockedForGuest() && setJobModal({ mode: 'edit', job })}
         onClose={() => setDrawerJob(null)}
         onGenerate={handleGenerateBullets}
         generating={drawerJob && generatingId === drawerJob.trackingId}
