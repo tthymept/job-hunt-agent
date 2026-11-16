@@ -19,7 +19,7 @@ const COLUMNS = [
   { key: 'deadline', label: 'Deadline' },
   { key: 'submitted', label: 'Submitted' },
   { key: 'apply', label: 'Apply Link' },
-  { key: 'upload', label: 'My Upload' },
+  { key: 'upload', label: 'My Uploads' },
 ]
 
 // The stage tiles above the table. Each one counts the jobs in its statuses and,
@@ -61,8 +61,17 @@ function DeadlineCell({ job }) {
   )
 }
 
-function UploadCell({ job, onUploadCv, onDeleteCv }) {
+// The two files a tracked job can hold. `kind` is what the backend calls the
+// slot, `field` is where the job keeps that file's link.
+const UPLOAD_SLOTS = [
+  { kind: 'cv', label: 'CV', field: 'myUploadUrl' },
+  { kind: 'cover_letter', label: 'Cover letter', field: 'coverLetterUrl' },
+]
+
+// One file slot: a link to the file with replace and delete, or an upload button
+function UploadSlot({ job, slot, onUploadCv, onDeleteCv }) {
   const inputRef = useRef(null)
+  const url = job[slot.field]
 
   function pickFile() {
     if (blockedForGuest()) return
@@ -71,21 +80,23 @@ function UploadCell({ job, onUploadCv, onDeleteCv }) {
 
   function deleteFile() {
     if (blockedForGuest()) return
-    onDeleteCv(job.trackingId)
+    onDeleteCv(job.trackingId, slot.kind)
   }
 
   return (
-    <span className="upload-box">
-      {job.myUploadUrl ? (
-        <span className="upload-set">
-          <a className="textlink" href={job.myUploadUrl} target="_blank" rel="noreferrer"><Icon name="file" size={14} /> View</a>
-          <button className="iconbtn" title="Replace upload" aria-label="Replace upload" onClick={pickFile}><Icon name="upload" size={14} /></button>
-          <button className="iconbtn danger" title="Delete upload" aria-label="Delete upload" onClick={deleteFile}><Icon name="trash" size={14} /></button>
-        </span>
+    <span className="upload-slot">
+      {url ? (
+        <>
+          <a className="textlink" href={url} target="_blank" rel="noreferrer" title={`Open ${slot.label}`}>
+            <Icon name="file" size={14} /> {slot.label}
+          </a>
+          <button className="iconbtn" title={`Replace ${slot.label}`} aria-label={`Replace ${slot.label}`} onClick={pickFile}><Icon name="upload" size={14} /></button>
+          <button className="iconbtn danger" title={`Delete ${slot.label}`} aria-label={`Delete ${slot.label}`} onClick={deleteFile}><Icon name="trash" size={14} /></button>
+        </>
       ) : (
-        <button className="btn sm quiet" onClick={pickFile}><Icon name="upload" size={13} /> Upload</button>
+        <button className="upload-add" title={`Upload ${slot.label}`} onClick={pickFile}><Icon name="upload" size={13} /> {slot.label}</button>
       )}
-      {/* One hidden file input serves both the Upload and Replace buttons */}
+      {/* One hidden file input serves both the upload and replace buttons */}
       <input
         ref={inputRef}
         type="file"
@@ -93,10 +104,20 @@ function UploadCell({ job, onUploadCv, onDeleteCv }) {
         accept=".pdf,.docx"
         onChange={e => {
           const file = e.target.files[0]
-          if (file) onUploadCv(job.trackingId, file)
+          if (file) onUploadCv(job.trackingId, file, slot.kind)
           e.target.value = '' // so choosing the same file again still triggers onChange
         }}
       />
+    </span>
+  )
+}
+
+function UploadCell({ job, onUploadCv, onDeleteCv }) {
+  return (
+    <span className="upload-box">
+      {UPLOAD_SLOTS.map(slot => (
+        <UploadSlot key={slot.kind} job={job} slot={slot} onUploadCv={onUploadCv} onDeleteCv={onDeleteCv} />
+      ))}
     </span>
   )
 }
@@ -410,7 +431,7 @@ export default function Dashboard({ jobs, hiddenJobCount, tabs, activeTab, tabCo
                     </td>
                   )}
                   {isShown('upload') && (
-                    <td data-label="My upload"><UploadCell job={j} onUploadCv={onUploadCv} onDeleteCv={onDeleteCv} /></td>
+                    <td data-label="My uploads"><UploadCell job={j} onUploadCv={onUploadCv} onDeleteCv={onDeleteCv} /></td>
                   )}
                   <td className="c-open">
                     <button className="iconbtn" aria-label="Show details" title="Show details" onClick={() => onOpenDrawer(j)}>

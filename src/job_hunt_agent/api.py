@@ -373,6 +373,27 @@ def delete_tab(tab_id: int):
 
 # ---------- Dashboard / Tracker ----------
 
+# The files you can attach to a tracked job: kind -> (column holding the storage path, storage folder)
+UPLOAD_KINDS = {
+    "cv": ("my_upload_path", "tailored"),
+    "cover_letter": ("cover_letter_path", "cover-letters"),
+}
+
+def upload_slot(kind: str) -> tuple[str, str]:
+    if kind not in UPLOAD_KINDS:
+        raise HTTPException(status_code=400, detail="Unknown upload kind.")
+    return UPLOAD_KINDS[kind]
+
+def signed_upload_url(path: str | None) -> str | None:
+    """A link to a stored file that works for an hour, or None when there is no file."""
+    if not path:
+        return None
+    try:
+        signed = supabase.storage.from_("resumes").create_signed_url(path, 3600)
+        return signed.get("signedURL") or signed.get("signed_url")
+    except Exception:
+        return None
+
 def reshape_tracker_row(row: dict) -> dict:
     job_raw = row.get("jobs") or {}
     overrides = row.get("overrides") or {}
@@ -388,20 +409,13 @@ def reshape_tracker_row(row: dict) -> dict:
         except (ValueError, AttributeError, TypeError):
             bullets = None
 
-    my_upload_url = None
-    if row.get("my_upload_path"):
-        try:
-            signed = supabase.storage.from_("resumes").create_signed_url(row["my_upload_path"], 3600)
-            my_upload_url = signed.get("signedURL") or signed.get("signed_url")
-        except Exception:
-            my_upload_url = None
-
     return {
         "trackingId": row["tracking_id"],
         "jobId": row["job_id"],
         "status": row.get("status") or "Saved / Not Applied",
         "bullets": bullets,
-        "myUploadUrl": my_upload_url,
+        "myUploadUrl": signed_upload_url(row.get("my_upload_path")),
+        "coverLetterUrl": signed_upload_url(row.get("cover_letter_path")),
         "submittedAt": row.get("submitted_at"),
         "edit": editable_fields(merged_raw),
         **core,
@@ -527,7 +541,8 @@ def generate_bullets(tracking_id: int):
 #---
 
 @app.post("/api/tracker/{tracking_id}/upload")
-async def upload_my_cv(tracking_id: int, file: UploadFile = File(...)):
+async def upload_my_cv(tracking_id: int, file: UploadFile = File(...), kind: str = "cv"):
+    column, folder = upload_slot(kind)
     uid = get_current_user_id()
     rows = (
         supabase.table("user_job_tracking")
@@ -541,18 +556,19 @@ async def upload_my_cv(tracking_id: int, file: UploadFile = File(...)):
         raise HTTPException(status_code=404, detail="Tracked job not found.")
     job_id = rows[0]["job_id"]
     ext = file.filename.rsplit(".", 1)[-1] if "." in file.filename else "pdf"
-    path = f"{uid}/tailored/{job_id}.{ext}"
+    path = f"{uid}/{folder}/{job_id}.{ext}"
     contents = await file.read()
     supabase.storage.from_("resumes").upload(path, contents, {"content-type": file.content_type, "upsert": "true"})
-    supabase.table("user_job_tracking").update({"my_upload_path": path}).eq("tracking_id", tracking_id).eq("user_id", uid).execute()
+    supabase.table("user_job_tracking").update({column: path}).eq("tracking_id", tracking_id).eq("user_id", uid).execute()
     return {"status": "uploaded", "path": path}
 
 @app.delete("/api/tracker/{tracking_id}/upload")
-def delete_my_cv(tracking_id: int):
+def delete_my_cv(tracking_id: int, kind: str = "cv"):
+    column, _ = upload_slot(kind)
     uid = get_current_user_id()
     rows = (
         supabase.table("user_job_tracking")
-        .select("my_upload_path")
+        .select(column)
         .eq("tracking_id", tracking_id)
         .eq("user_id", uid)
         .execute()
@@ -560,10 +576,10 @@ def delete_my_cv(tracking_id: int):
     )
     if not rows:
         raise HTTPException(status_code=404, detail="Tracked job not found.")
-    path = rows[0].get("my_upload_path")
+    path = rows[0].get(column)
     if path:
         supabase.storage.from_("resumes").remove([path])
-    supabase.table("user_job_tracking").update({"my_upload_path": None}).eq("tracking_id", tracking_id).eq("user_id", uid).execute()
+    supabase.table("user_job_tracking").update({column: None}).eq("tracking_id", tracking_id).eq("user_id", uid).execute()
     return {"status": "deleted"}
 
 def track_job_for_user(uid: int, job_id: str, tab_id: int) -> str:

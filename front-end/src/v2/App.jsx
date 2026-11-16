@@ -252,17 +252,19 @@ export default function App() {
       .finally(() => setGeneratingId(null))
   }
 
-  function handleUploadCv(trackingId, file) {
+  // kind is 'cv' or 'cover_letter': the two files a tracked job can hold
+  function handleUploadCv(trackingId, file, kind = 'cv') {
     const formData = new FormData()
     formData.append('file', file)
-    apiFetch(`/api/tracker/${trackingId}/upload`, { method: 'POST', body: formData })
+    apiFetch(`/api/tracker/${trackingId}/upload?kind=${kind}`, { method: 'POST', body: formData })
       .then(() => loadTracker())
-      .catch(err => console.error('Failed to upload CV:', err))
+      .catch(err => console.error('Failed to upload file:', err))
   }
 
-  function handleDeleteCv(trackingId) {
-    setJobs(prev => prev.map(j => (j.trackingId === trackingId ? { ...j, myUploadUrl: null } : j)))
-    apiFetch(`/api/tracker/${trackingId}/upload`, { method: 'DELETE' })
+  function handleDeleteCv(trackingId, kind = 'cv') {
+    const field = kind === 'cover_letter' ? 'coverLetterUrl' : 'myUploadUrl'
+    setJobs(prev => prev.map(j => (j.trackingId === trackingId ? { ...j, [field]: null } : j)))
+    apiFetch(`/api/tracker/${trackingId}/upload?kind=${kind}`, { method: 'DELETE' })
       .catch(err => {
         console.error('Failed to delete CV:', err)
         loadTracker()
