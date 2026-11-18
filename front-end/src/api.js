@@ -108,3 +108,24 @@ export async function readResult(res, fallback) {
   if (!res.ok || !data) throw new Error(data?.detail || fallback)
   return data
 }
+
+// Opens a stored file (CV, cover letter) in a new tab. `path` is an endpoint that
+// answers { url } with a link made just now, so a page left open for hours still
+// opens files. The tab is opened right away, inside the click, so the browser
+// doesn't block it as a popup; it is sent to the file once the link arrives.
+export async function openFileLink(path) {
+  const tab = window.open('', '_blank')
+  try {
+    const { url } = await readResult(await apiFetch(path), 'The file could not be opened.')
+    if (!tab) {
+      window.open(url, '_blank', 'noopener') // popups blocked: try a plain new tab
+      return
+    }
+    tab.opener = null
+    tab.location.href = url
+  } catch (err) {
+    tab?.close()
+    console.error('Failed to open file:', err)
+    alert(err.message)
+  }
+}

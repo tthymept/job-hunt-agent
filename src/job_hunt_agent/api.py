@@ -411,15 +411,22 @@ def check_upload(filename: str | None, contents: bytes) -> tuple[str, str]:
         raise HTTPException(status_code=400, detail=f"That doesn't look like a valid .{ext} file.")
     return ext, content_type
 
-def signed_upload_url(path: str | None) -> str | None:
-    """A link to a stored file that works for an hour, or None when there is no file."""
-    if not path:
-        return None
+# A file link only has to last until the browser opens it
+FILE_LINK_SECONDS = 60
+
+def fresh_file_link(path: str) -> dict:
+    """{"url": ...} for a stored file, made when it is clicked. Links used to be
+    made when the page loaded and expired after an hour, so a page left open
+    longer showed an InvalidJWT error instead of the file."""
     try:
-        signed = supabase.storage.from_("resumes").create_signed_url(path, 3600)
-        return signed.get("signedURL") or signed.get("signed_url")
-    except Exception:
-        return None
+        signed = supabase.storage.from_("resumes").create_signed_url(path, FILE_LINK_SECONDS)
+        url = signed.get("signedURL") or signed.get("signed_url")
+    except Exception as e:
+        print(f"Signing {path} failed: {e}")
+        url = None
+    if not url:
+        raise HTTPException(status_code=502, detail="Couldn't get a link to that file from storage.")
+    return {"url": url}
 
 def reshape_tracker_row(row: dict, locked: bool = False) -> dict:
     """locked (a guest is looking): leave out the uploaded files and the tailored
@@ -435,8 +442,8 @@ def reshape_tracker_row(row: dict, locked: bool = False) -> dict:
             "jobId": row["job_id"],
             "status": row.get("status") or "Saved / Not Applied",
             "bullets": None,
-            "myUploadUrl": None,
-            "coverLetterUrl": None,
+            "hasMyUpload": False,
+            "hasCoverLetter": False,
             "submittedAt": row.get("submitted_at"),
             "edit": None,
             "locked": True,
@@ -457,8 +464,9 @@ def reshape_tracker_row(row: dict, locked: bool = False) -> dict:
         "jobId": row["job_id"],
         "status": row.get("status") or "Saved / Not Applied",
         "bullets": bullets,
-        "myUploadUrl": signed_upload_url(row.get("my_upload_path")),
-        "coverLetterUrl": signed_upload_url(row.get("cover_letter_path")),
+        # Only whether each file exists: the link is made on click (see tracker_file_link)
+        "hasMyUpload": bool(row.get("my_upload_path")),
+        "hasCoverLetter": bool(row.get("cover_letter_path")),
         "submittedAt": row.get("submitted_at"),
         "edit": editable_fields(merged_raw),
         **core,
@@ -626,6 +634,27 @@ async def upload_my_cv(tracking_id: int, file: UploadFile = File(...), kind: str
         except Exception as e:
             print(f"Couldn't remove the replaced upload {old_path}: {e}")
     return {"status": "uploaded", "path": path}
+
+@app.get("/api/tracker/{tracking_id}/file-link")
+def tracker_file_link(tracking_id: int, request: Request, kind: str = "cv"):
+    if is_guest(request):
+        raise HTTPException(status_code=403, detail="View-only guest mode. Enter the access key to open files.")
+    column, _ = upload_slot(kind)
+    uid = get_current_user_id()
+    rows = (
+        supabase.table("user_job_tracking")
+        .select(column)
+        .eq("tracking_id", tracking_id)
+        .eq("user_id", uid)
+        .execute()
+        .data
+    )
+    if not rows:
+        raise HTTPException(status_code=404, detail="Tracked job not found.")
+    path = rows[0].get(column)
+    if not path:
+        raise HTTPException(status_code=404, detail="No file uploaded here.")
+    return fresh_file_link(path)
 
 @app.delete("/api/tracker/{tracking_id}/upload")
 def delete_my_cv(tracking_id: int, kind: str = "cv"):
@@ -1049,20 +1078,13 @@ def cv_payload(uid: int) -> dict:
     if not row.get("resume_path"):
         return {"exists": False}
 
-    download_url = None
-    try:
-        signed = supabase.storage.from_(RESUME_BUCKET).create_signed_url(row["resume_path"], 3600)
-        download_url = signed.get("signedURL") or signed.get("signed_url")
-    except Exception:
-        download_url = None
-
+    # No download link here: the Download button asks /api/cv/file-link when clicked
     return {
         "exists": True,
         "fileName": row.get("resume_filename") or "cv.pdf",
         "sizeKb": row.get("resume_size_kb"),
         "updatedAt": row.get("resume_updated_at"),
         "structure": row.get("cv_structure"),
-        "downloadUrl": download_url,
     }
 
 
@@ -1100,6 +1122,18 @@ def get_cv_file(request: Request):
         media_type="application/pdf",
         headers={"Content-Disposition": 'inline; filename="cv.pdf"', "Cache-Control": "no-store"},
     )
+
+
+@app.get("/api/cv/file-link")
+def get_cv_file_link(request: Request):
+    if is_guest(request):
+        raise HTTPException(status_code=403, detail="View-only guest mode. Enter the access key to download the CV.")
+    uid = get_current_user_id()
+    rows = supabase.table("users").select("resume_path").eq("user_id", uid).execute().data
+    path = rows[0].get("resume_path") if rows else None
+    if not path:
+        raise HTTPException(status_code=404, detail="No CV uploaded yet.")
+    return fresh_file_link(path)
 
 
 @app.post("/api/cv")

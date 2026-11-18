@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 import { STATUS, ST_CLASS } from '../data'
-import { blockedForGuest } from '../api'
+import { blockedForGuest, openFileLink } from '../api'
 import { locationGroup } from '../locationGroup'
 import Calendar from './Calendar'
 import TabBar from './TabBar'
@@ -61,16 +61,21 @@ function DeadlineCell({ job }) {
 }
 
 // The two files a tracked job can hold. `kind` is what the backend calls the
-// slot, `field` is where the job keeps that file's link.
+// slot, `field` is where the job says whether that file exists.
 const UPLOAD_SLOTS = [
-  { kind: 'cv', label: 'CV', field: 'myUploadUrl' },
-  { kind: 'cover_letter', label: 'Cover letter', field: 'coverLetterUrl' },
+  { kind: 'cv', label: 'CV', field: 'hasMyUpload' },
+  { kind: 'cover_letter', label: 'Cover letter', field: 'hasCoverLetter' },
 ]
 
 // One file slot: a link to the file with replace and delete, or an upload button
 function UploadSlot({ job, slot, onUploadCv, onDeleteCv }) {
   const inputRef = useRef(null)
-  const url = job[slot.field]
+  const hasFile = job[slot.field]
+
+  function openFile() {
+    if (blockedForGuest()) return
+    openFileLink(`/api/tracker/${job.trackingId}/file-link?kind=${slot.kind}`)
+  }
 
   function pickFile() {
     if (blockedForGuest()) return
@@ -84,11 +89,11 @@ function UploadSlot({ job, slot, onUploadCv, onDeleteCv }) {
 
   return (
     <span className="upload-slot">
-      {url ? (
+      {hasFile ? (
         <>
-          <a className="textlink" href={url} target="_blank" rel="noreferrer" title={`Open ${slot.label}`}>
+          <button className="textlink" title={`Open ${slot.label}`} onClick={openFile}>
             <Icon name="file" size={14} /> {slot.label}
-          </a>
+          </button>
           <button className="iconbtn" title={`Replace ${slot.label}`} aria-label={`Replace ${slot.label}`} onClick={pickFile}><Icon name="upload" size={14} /></button>
           <button className="iconbtn danger" title={`Delete ${slot.label}`} aria-label={`Delete ${slot.label}`} onClick={deleteFile}><Icon name="trash" size={14} /></button>
         </>

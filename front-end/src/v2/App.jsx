@@ -274,8 +274,8 @@ export default function App() {
   }
 
   function handleDeleteCv(trackingId, kind = 'cv') {
-    const field = kind === 'cover_letter' ? 'coverLetterUrl' : 'myUploadUrl'
-    setJobs(prev => prev.map(j => (j.trackingId === trackingId ? { ...j, [field]: null } : j)))
+    const field = kind === 'cover_letter' ? 'hasCoverLetter' : 'hasMyUpload'
+    setJobs(prev => prev.map(j => (j.trackingId === trackingId ? { ...j, [field]: false } : j)))
     apiFetch(`/api/tracker/${trackingId}/upload?kind=${kind}`, { method: 'DELETE' })
       .then(res => readResult(res, 'The file could not be deleted.'))
       .catch(err => {

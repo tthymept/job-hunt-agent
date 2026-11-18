@@ -76,22 +76,51 @@ def test_guest_tracker_rows_hide_the_cv_files_and_bullets(monkeypatch):
 
         data = rows
 
-    signed = []
     monkeypatch.setattr(api.supabase, "table", lambda name: FakeQuery())
-    monkeypatch.setattr(api, "signed_upload_url", lambda path: signed.append(path) or f"https://signed/{path}" if path else None)
     monkeypatch.setattr(api, "load_tabs", lambda uid: [{"tab_id": 7, "name": "My jobs", "enabled": True, "is_default": True}])
 
     [guest] = client.get("/api/tracker", headers={"X-Guest": "1"}).json()
     assert guest["locked"] is True
-    assert guest["myUploadUrl"] is None and guest["coverLetterUrl"] is None
+    assert guest["hasMyUpload"] is False and guest["hasCoverLetter"] is False
     assert guest["bullets"] is None and guest["edit"] is None
     assert guest["co"] == "Acme"  # the job itself still shows
-    assert signed == []  # no link was even made
 
     [owner] = client.get("/api/tracker", headers={"X-Access-Key": "secret"}).json()
-    assert owner["myUploadUrl"] == "https://signed/1/tailored/job-1.pdf"
+    assert owner["hasMyUpload"] is True and owner["hasCoverLetter"] is True
     assert owner["bullets"] == [{"label": "Intern", "lines": ["Built it"]}]
     assert "locked" not in owner
+    # Links are made on click, never in the list, so they can't go stale on an open page
+    assert not any("url" in key.lower() for key in owner)
+
+
+def test_file_links_are_made_on_click_and_refused_to_guests(monkeypatch):
+    monkeypatch.setattr(api, "APP_ACCESS_KEY", "secret")
+
+    class FakeQuery:
+        def __getattr__(self, name):
+            return lambda *args, **kwargs: self
+
+        data = [{"my_upload_path": "1/tailored/job-1.pdf", "cover_letter_path": None, "resume_path": "1/cv.pdf"}]
+
+    class FakeBucket:
+        def create_signed_url(self, path, expires_in):
+            signed.append((path, expires_in))
+            return {"signedURL": f"https://signed/{path}"}
+
+    signed = []
+    monkeypatch.setattr(api.supabase, "table", lambda name: FakeQuery())
+    monkeypatch.setattr(api.supabase.storage, "from_", lambda bucket: FakeBucket())
+    owner = {"X-Access-Key": "secret"}
+
+    res = client.get("/api/tracker/1/file-link?kind=cv", headers=owner)
+    assert res.json() == {"url": "https://signed/1/tailored/job-1.pdf"}
+    assert signed == [("1/tailored/job-1.pdf", api.FILE_LINK_SECONDS)]
+    assert client.get("/api/tracker/1/file-link?kind=cover_letter", headers=owner).status_code == 404
+    assert client.get("/api/cv/file-link", headers=owner).json() == {"url": "https://signed/1/cv.pdf"}
+
+    guest = {"X-Guest": "1"}
+    assert client.get("/api/tracker/1/file-link?kind=cv", headers=guest).status_code == 403
+    assert client.get("/api/cv/file-link", headers=guest).status_code == 403
 
 
 def test_guest_does_not_see_the_email(monkeypatch):
@@ -122,13 +151,12 @@ def test_guest_cannot_see_the_cv(monkeypatch):
         "sizeKb": 107,
         "updatedAt": "2026-10-12T00:00:00+00:00",
         "structure": {"sections": [{"title": "Education"}]},
-        "downloadUrl": "https://example.supabase.co/signed",
     }
     monkeypatch.setattr(api, "cv_payload", lambda uid: full)
 
     guest = client.get("/api/cv", headers={"X-Guest": "1"}).json()
     assert guest["locked"] is True
-    assert "structure" not in guest and "downloadUrl" not in guest
+    assert "structure" not in guest
     assert client.get("/api/cv/file", headers={"X-Guest": "1"}).status_code == 403
 
     owner = client.get("/api/cv", headers={"X-Access-Key": "secret"}).json()
