@@ -187,6 +187,8 @@ input[type=checkbox]{accent-color:var(--primary-bg);width:15px;height:15px;margi
 .dot.st-saved{background:var(--st-saved-tx);opacity:.55;}
 .dot.st-sub{background:var(--st-sub-tx);}
 .dot.st-online{background:var(--st-online-tx);}
+.dot.st-int1{background:var(--st-int1-tx);}
+.dot.st-int2{background:var(--st-int2-tx);}
 .dot.st-off{background:var(--st-off-tx);}
 .dot.st-rej{background:var(--st-rej-tx);}
 
@@ -276,6 +278,12 @@ th.c-move,td.c-move{width:1%;padding-right:0;}
 .st-int2{background:var(--st-int2-bg);color:var(--st-int2-tx);}
 .st-off{background:var(--st-off-bg);color:var(--st-off-tx);}
 .st-rej{background:var(--st-rej-bg);color:var(--st-rej-tx);}
+/* Status cell: the status dropdown with a short note under it (waiting time, OA due, next interview) */
+.status-cell{display:inline-flex;flex-direction:column;align-items:flex-start;gap:3px;}
+.status-note{border:0;background:none;padding:0 2px;cursor:pointer;font-size:11.5px;font-weight:500;color:var(--sub);white-space:nowrap;}
+.status-note:hover{color:var(--text);text-decoration:underline;}
+.status-note.warn{color:var(--warn);}
+.status-note.muted{color:var(--muted);font-weight:400;}
 
 /* ---------- Deadlines: calendar + upcoming list ---------- */
 .deadlines{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:16px;align-items:start;}
@@ -322,6 +330,39 @@ th.c-move,td.c-move{width:1%;padding-right:0;}
 .drawer-close{position:absolute;top:16px;right:16px;}
 .drawer-body{padding:20px 22px;overflow-y:auto;flex:1;overscroll-behavior:contain;}
 .drawer-body h4{font-size:13px;font-weight:600;margin-bottom:10px;}
+/* Details | Progress | Tailored CV, sitting on the bottom edge of the drawer header */
+.drawer-head.with-tabs{padding-bottom:0;}
+.drawer-tabs{display:flex;gap:18px;margin-top:14px;}
+.drawer-tab{border:0;background:none;cursor:pointer;padding:9px 0 10px;font-size:13px;font-weight:500;color:var(--sub);
+  border-bottom:2px solid transparent;margin-bottom:-1px;}
+.drawer-tab:hover{color:var(--text);}
+.drawer-tab.active{color:var(--text);border-bottom-color:var(--text);}
+/* Progress tab: a timeline of stages, each with its date, then notes and contact */
+.timeline{list-style:none;margin:0 0 22px;padding:0;}
+.tl-item{position:relative;display:flex;gap:12px;padding-bottom:16px;}
+.tl-item:last-child{padding-bottom:0;}
+.tl-item::before{content:'';position:absolute;left:3px;top:14px;bottom:0;width:1px;background:var(--border);}
+.tl-item:last-child::before{display:none;}
+.tl-item > .dot{margin-top:6px;position:relative;}
+.tl-main{flex:1;min-width:0;}
+.tl-head{display:flex;align-items:baseline;flex-wrap:wrap;gap:2px 8px;}
+.tl-status{font-weight:600;font-size:13.5px;}
+.tl-gap{font-size:12px;color:var(--muted);}
+.tl-gap.warn{color:var(--warn);}
+.tl-date{display:flex;align-items:center;gap:10px;margin-top:4px;font-size:13px;color:var(--sub);}
+.tl-date input{height:30px;font-size:12.5px;}
+.tl-toggle{font-size:12.5px;}
+.tl-summary{font-size:12.5px;color:var(--muted);margin-top:5px;line-height:1.45;overflow-wrap:anywhere;}
+.stage-details{margin-top:8px;display:flex;flex-direction:column;gap:8px;padding:10px 12px;border:1px solid var(--border);border-radius:8px;}
+.stage-field{display:flex;align-items:center;gap:10px;font-size:12.5px;color:var(--sub);}
+.stage-field span{width:56px;flex-shrink:0;}
+.stage-field input{height:30px;font-size:12.5px;min-width:0;}
+.stage-check{display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;}
+.stage-details textarea{width:100%;min-height:52px;resize:vertical;font-size:13px;}
+.progress-notes{border-top:1px solid var(--border);padding-top:18px;}
+.progress-notes textarea,.progress-notes input{width:100%;margin-bottom:16px;}
+.progress-notes textarea{min-height:90px;resize:vertical;}
+.progress-empty{margin-bottom:22px;}
 .drawer-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;}
 .drawer-row h4{margin:0;}
 .facts{display:grid;grid-template-columns:1fr 1fr;gap:12px 16px;margin:0 0 22px;padding-bottom:20px;border-bottom:1px solid var(--border);}

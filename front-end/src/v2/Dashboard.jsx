@@ -6,6 +6,7 @@ import Calendar from './Calendar'
 import TabBar from './TabBar'
 import Icon from './Icon'
 import { parseDay, formatDay, daysUntil, daysLabel } from './dates'
+import { statusNote } from './stages'
 
 // The columns you can show or hide. The details arrow at the end of each row always stays.
 const COLUMNS = [
@@ -187,6 +188,18 @@ function SortHeader({ column, label, sort, onSort, iconOnly = false, className }
   )
 }
 
+// The short line under a status: how long you've waited, when the OA is due, the
+// next interview. Clicking it opens the job's Progress tab to fill in or check details.
+function StatusNote({ job, onOpen }) {
+  const note = statusNote(job)
+  if (!note) return null
+  return (
+    <button className={`status-note${note.tone ? ` ${note.tone}` : ''}`} title={note.title || 'Open progress'} onClick={onOpen}>
+      {note.text}
+    </button>
+  )
+}
+
 // Deadline cell: the date, plus how long is left while the job is still unapplied
 function DeadlineCell({ job }) {
   const date = parseDay(job.dl)
@@ -326,7 +339,7 @@ function UpcomingDeadlines({ jobs, onOpenJob }) {
   )
 }
 
-export default function Dashboard({ jobs, hiddenJobCount, tabs, activeTab, tabCounts, onSelectTab, tabActions, tabError, onDismissTabError, onUnlock, onStatusChange, onReorder, onOpenDrawer, onUploadCv, onDeleteCv, onOpenManualModal, onLoadFromUrl }) {
+export default function Dashboard({ jobs, hiddenJobCount, tabs, activeTab, tabCounts, onSelectTab, tabActions, tabError, onDismissTabError, onUnlock, onStatusChange, onReorder, onOpenDrawer, onOpenProgress, onUploadCv, onDeleteCv, onOpenManualModal, onLoadFromUrl }) {
   const [url, setUrl] = useState('')
   const [loadingUrl, setLoadingUrl] = useState(false)
   const [urlMessage, setUrlMessage] = useState(null)
@@ -646,16 +659,19 @@ export default function Dashboard({ jobs, hiddenJobCount, tabs, activeTab, tabCo
                   )}
                   {isShown('status') && (
                     <td className="c-full">
-                      <span className={`status st-${ST_CLASS[j.status]}`}>
-                        <select
-                          aria-label={`Status of ${j.title}`}
-                          value={j.status}
-                          onChange={e => onStatusChange(j.trackingId, e.target.value)}
-                        >
-                          {STATUS.map(s => <option key={s}>{s}</option>)}
-                          <option value="Untracked">Untrack (remove)</option>
-                        </select>
-                      </span>
+                      <div className="status-cell">
+                        <span className={`status st-${ST_CLASS[j.status]}`}>
+                          <select
+                            aria-label={`Status of ${j.title}`}
+                            value={j.status}
+                            onChange={e => onStatusChange(j.trackingId, e.target.value)}
+                          >
+                            {STATUS.map(s => <option key={s}>{s}</option>)}
+                            <option value="Untracked">Untrack (remove)</option>
+                          </select>
+                        </span>
+                        <StatusNote job={j} onOpen={() => onOpenProgress(j)} />
+                      </div>
                     </td>
                   )}
                   {showJob && (

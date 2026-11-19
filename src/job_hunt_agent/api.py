@@ -489,11 +489,14 @@ def fresh_file_link(path: str) -> dict:
 
 def reshape_tracker_row(row: dict, locked: bool = False) -> dict:
     """locked (a guest is looking): leave out the uploaded files and the tailored
-    bullets, which are the owner's CV, and the edit form's fields."""
+    bullets, which are the owner's CV, the edit form's fields, and anything you
+    wrote yourself (notes, contact, stage notes)."""
     job_raw = row.get("jobs") or {}
     overrides = row.get("overrides") or {}
     merged_raw = {**job_raw, **overrides}
     core = job_core_fields(merged_raw)
+    events = row.get("status_events") or []
+    history = history_payload(events, locked=locked)
 
     if locked:
         return {
@@ -503,7 +506,10 @@ def reshape_tracker_row(row: dict, locked: bool = False) -> dict:
             "bullets": None,
             "hasMyUpload": False,
             "hasCoverLetter": False,
-            "submittedAt": row.get("submitted_at"),
+            "submittedAt": submitted_at_of(events),
+            "history": history,
+            "notes": None,
+            "contact": None,
             "edit": None,
             "locked": True,
             **core,
@@ -526,7 +532,10 @@ def reshape_tracker_row(row: dict, locked: bool = False) -> dict:
         # Only whether each file exists: the link is made on click (see tracker_file_link)
         "hasMyUpload": bool(row.get("my_upload_path")),
         "hasCoverLetter": bool(row.get("cover_letter_path")),
-        "submittedAt": row.get("submitted_at"),
+        "submittedAt": submitted_at_of(events),
+        "history": history,
+        "notes": row.get("notes") or "",
+        "contact": row.get("contact") or "",
         "edit": editable_fields(merged_raw),
         **core,
     }
@@ -541,7 +550,7 @@ def get_tracker(request: Request, response: Response):
     uid = get_current_user_id()
     rows = (
         supabase.table("user_job_tracking")
-        .select("*, jobs(*)")
+        .select("*, jobs(*), status_events(*)")
         .eq("user_id", uid)
         .neq("status", "Untracked")
         # My order (the arrows on the dashboard); jobs from before it existed by when they were added
@@ -563,25 +572,115 @@ def get_tracker(request: Request, response: Response):
         for row in rows
     ]
 
-# The statuses a tracked job can have: the dashboard's stages (STATUS in
-# front-end/src/data.js) plus Untracked, which hides the job from the dashboard
-VALID_STATUSES = {
+# ---------- Status history ----------
+# Every stage a tracked job reaches is a row in status_events, with the day it
+# happened. The history is the path to the current stage: each stage at most
+# once, always in pipeline order.
+
+# The dashboard's stages in order (STATUS in front-end/src/data.js)
+PIPELINE = [
     "Saved / Not Applied", "Submitted", "Online Assignment",
     "Interview Round 1", "Interview Round 2", "Offered", "Rejected",
-    "Untracked",
-}
+]
+# Plus Untracked, which hides the job from the dashboard
+VALID_STATUSES = set(PIPELINE) | {"Untracked"}
+
+MAX_STAGE_NOTE_CHARS = 1000
+MAX_NOTES_CHARS = 5000
+MAX_CONTACT_CHARS = 300
+
+def pipeline_index(status: str) -> int:
+    return PIPELINE.index(status) if status in PIPELINE else -1
+
+def plan_status_change(history: list[dict], new_status: str) -> tuple[list[int], bool]:
+    """How the history changes when the status changes to new_status:
+    (event ids to delete, whether to add a row for new_status dated now).
+    - Untracked isn't a stage, so nothing changes.
+    - Saved / Not Applied is the start, so the whole history goes.
+    - Any stage after the new one goes. Picking a stage already in the history
+      keeps it with its date, so undoing a mis-click loses nothing; picking a new
+      one adds it, so Rejected -> Offered replaces Rejected instead of keeping both."""
+    if new_status == "Untracked":
+        return [], False
+    if new_status == "Saved / Not Applied":
+        return [e["event_id"] for e in history], False
+    new_index = pipeline_index(new_status)
+    delete = [e["event_id"] for e in history if pipeline_index(e["status"]) > new_index]
+    return delete, not any(e["status"] == new_status for e in history)
+
+def history_payload(events: list[dict], locked: bool = False) -> list[dict]:
+    """The history for the dashboard, in pipeline order. A guest doesn't get the notes."""
+    ordered = sorted(events, key=lambda e: pipeline_index(e["status"]))
+    return [
+        {
+            "id": e["event_id"],
+            "status": e["status"],
+            "at": e["happened_at"],
+            "scheduledAt": e.get("scheduled_at"),
+            "done": bool(e.get("done")),
+            "doneAt": e.get("done_at"),
+            "note": None if locked else (e.get("note") or ""),
+        }
+        for e in ordered
+    ]
+
+def submitted_at_of(events: list[dict]) -> str | None:
+    """When the job was submitted: the date on its Submitted row."""
+    return next((e["happened_at"] for e in events if e["status"] == "Submitted"), None)
+
+def past_day(value: str, today: date, what: str) -> date:
+    """A "YYYY-MM-DD" typed by the user, refused when invalid or in the future."""
+    try:
+        day = date.fromisoformat(value)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail=f"The {what} isn't a valid date.")
+    if day > today + timedelta(days=1):  # a day of slack for time zones ahead of UTC
+        raise HTTPException(status_code=400, detail=f"The {what} can't be in the future.")
+    return day
+
+def noon_utc(day: date) -> str:
+    """A day stored as a timestamp at noon UTC, so it shows as that day in any time zone."""
+    return f"{day.isoformat()}T12:00:00+00:00"
+
+def clean_scheduled(value: str | None) -> str | None:
+    """An OA due date or offer reply-by ("YYYY-MM-DD", kept at noon UTC) or an
+    interview time (a full ISO timestamp from the browser). Empty clears it."""
+    if not value:
+        return None
+    try:
+        if len(value) == 10:
+            return noon_utc(date.fromisoformat(value))
+        moment = datetime.fromisoformat(value)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="That date or time isn't valid.")
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=timezone.utc)
+    return moment.isoformat()
+
+def clean_text(value: str | None, limit: int, what: str) -> str | None:
+    text = (value or "").strip()
+    if len(text) > limit:
+        raise HTTPException(status_code=400, detail=f"The {what} can be up to {limit} characters.")
+    return text or None
+
+def load_events(uid: int, tracking_id: int) -> list[dict]:
+    return (
+        supabase.table("status_events").select("*").eq("tracking_id", tracking_id).eq("user_id", uid).execute().data
+    ) or []
+
+def change_history(uid: int, tracking_id: int, events: list[dict], new_status: str, now: str) -> list[dict]:
+    """Applies plan_status_change and returns the history as it is afterwards."""
+    delete, add = plan_status_change(events, new_status)
+    if delete:
+        supabase.table("status_events").delete().in_("event_id", delete).eq("user_id", uid).execute()
+    if add:
+        supabase.table("status_events").insert({
+            "tracking_id": tracking_id, "user_id": uid, "status": new_status, "happened_at": now,
+        }).execute()
+    return load_events(uid, tracking_id) if delete or add else events
 
 class StatusBody(BaseModel):
     status: str
-
-def next_submitted_at(new_status: str, current: str | None, now: str) -> str | None:
-    """The first move to Submitted sets the date and later stages keep it.
-    Going back to Saved clears it, so a mis-click leaves no date behind."""
-    if new_status == "Saved / Not Applied":
-        return None
-    if new_status == "Submitted" and not current:
-        return now
-    return current
 
 @app.patch("/api/tracker/{tracking_id}/status")
 def update_status(tracking_id: int, body: StatusBody):
@@ -590,7 +689,7 @@ def update_status(tracking_id: int, body: StatusBody):
     uid = get_current_user_id()
     rows = (
         supabase.table("user_job_tracking")
-        .select("submitted_at")
+        .select("tracking_id, status_events(*)")
         .eq("tracking_id", tracking_id)
         .eq("user_id", uid)
         .execute()
@@ -599,13 +698,79 @@ def update_status(tracking_id: int, body: StatusBody):
     if not rows:
         raise HTTPException(status_code=404, detail="Tracked job not found.")
     now = datetime.now(timezone.utc).isoformat()
-    submitted_at = next_submitted_at(body.status, rows[0].get("submitted_at"), now)
+    events = change_history(uid, tracking_id, rows[0].get("status_events") or [], body.status, now)
     supabase.table("user_job_tracking").update({
         "status": body.status,
         "status_updated_at": now,
-        "submitted_at": submitted_at,
     }).eq("tracking_id", tracking_id).eq("user_id", uid).execute()
-    return {"status": "ok", "submittedAt": submitted_at}
+    return {"status": "ok", "submittedAt": submitted_at_of(events), "history": history_payload(events)}
+
+class StageUpdateBody(BaseModel):
+    # Each field is only changed when sent
+    at: str | None = None            # "YYYY-MM-DD": the day the job reached this stage
+    scheduled_at: str | None = None  # OA due date, interview time, offer reply-by
+    done: bool | None = None
+    note: str | None = None
+
+@app.patch("/api/tracker/{tracking_id}/history/{event_id}")
+def update_stage(tracking_id: int, event_id: int, body: StageUpdateBody):
+    uid = get_current_user_id()
+    found = (
+        supabase.table("status_events")
+        .select("event_id")
+        .eq("event_id", event_id)
+        .eq("tracking_id", tracking_id)
+        .eq("user_id", uid)
+        .execute()
+        .data
+    )
+    if not found:
+        raise HTTPException(status_code=404, detail="That stage isn't in this job's history.")
+    sent = body.model_fields_set
+    changes = {}
+    if "at" in sent:
+        if not body.at:
+            raise HTTPException(status_code=400, detail="A stage needs a date.")
+        changes["happened_at"] = noon_utc(past_day(body.at, datetime.now(timezone.utc).date(), "date"))
+    if "scheduled_at" in sent:
+        changes["scheduled_at"] = clean_scheduled(body.scheduled_at)
+    if "done" in sent and body.done is not None:
+        changes["done"] = body.done
+        changes["done_at"] = datetime.now(timezone.utc).isoformat() if body.done else None
+    if "note" in sent:
+        changes["note"] = clean_text(body.note, MAX_STAGE_NOTE_CHARS, "note")
+    if changes:
+        supabase.table("status_events").update(changes).eq("event_id", event_id).eq("user_id", uid).execute()
+    events = load_events(uid, tracking_id)
+    return {"submittedAt": submitted_at_of(events), "history": history_payload(events)}
+
+class NotesBody(BaseModel):
+    # Each field is only changed when sent
+    notes: str | None = None
+    contact: str | None = None
+
+@app.patch("/api/tracker/{tracking_id}/notes")
+def update_notes(tracking_id: int, body: NotesBody):
+    uid = get_current_user_id()
+    sent = body.model_fields_set
+    changes = {}
+    if "notes" in sent:
+        changes["notes"] = clean_text(body.notes, MAX_NOTES_CHARS, "notes")
+    if "contact" in sent:
+        changes["contact"] = clean_text(body.contact, MAX_CONTACT_CHARS, "contact")
+    if not changes:
+        raise HTTPException(status_code=400, detail="Nothing to save.")
+    saved = (
+        supabase.table("user_job_tracking")
+        .update(changes)
+        .eq("tracking_id", tracking_id)
+        .eq("user_id", uid)
+        .execute()
+        .data
+    )
+    if not saved:
+        raise HTTPException(status_code=404, detail="Tracked job not found.")
+    return {"notes": saved[0].get("notes") or "", "contact": saved[0].get("contact") or ""}
 
 class MoveTabBody(BaseModel):
     tab_id: int
@@ -751,10 +916,11 @@ def track_job_for_user(uid: int, job_id: str, tab_id: int) -> str:
             supabase.table("user_job_tracking").update({
                 "status": "Saved / Not Applied",
                 "status_updated_at": datetime.now(timezone.utc).isoformat(),
-                "submitted_at": None,
                 "tab_id": tab_id,
                 "position": end_position(uid, tab_id),
             }).eq("tracking_id", row["tracking_id"]).execute()
+            # Tracked again from the start: the old history goes with it
+            supabase.table("status_events").delete().eq("tracking_id", row["tracking_id"]).eq("user_id", uid).execute()
             return "retracked"
         return "already_tracked"
     supabase.table("user_job_tracking").insert({
@@ -844,21 +1010,28 @@ def editable_fields(raw: dict) -> dict:
     }
 
 def submitted_at_from_date(value: str | None, status: str, today: date) -> str | None:
-    """The submitted_at to store for a date typed into the Edit job form
-    ("YYYY-MM-DD", or None/"" to clear it). Kept at noon UTC, so it shows as the
-    same day in any time zone. Raises 400 for a bad or future date, or a date on
-    a job that hasn't been submitted yet."""
+    """The date for the Submitted stage, from the Edit job form ("YYYY-MM-DD", or
+    None/"" to clear it), kept at noon UTC. Raises 400 for a bad or future date,
+    or a date on a job that hasn't been submitted yet."""
     if not value:
         return None
     if status in ("Saved / Not Applied", "Untracked"):
         raise HTTPException(status_code=400, detail="Mark the job as Submitted first, then you can change the date.")
-    try:
-        day = date.fromisoformat(value)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="That submitted date isn't a valid date.")
-    if day > today + timedelta(days=1):  # a day of slack for time zones ahead of UTC
-        raise HTTPException(status_code=400, detail="The submitted date can't be in the future.")
-    return f"{day.isoformat()}T12:00:00+00:00"
+    return noon_utc(past_day(value, today, "submitted date"))
+
+def set_submitted_date(uid: int, tracking_id: int, events: list[dict], when: str | None):
+    """Moves, adds or removes the Submitted stage to match the date from Edit job.
+    A job that skipped Submitted (straight to OA, say) gets the stage added."""
+    submitted = next((e for e in events if e["status"] == "Submitted"), None)
+    if when is None:
+        if submitted:
+            supabase.table("status_events").delete().eq("event_id", submitted["event_id"]).execute()
+    elif submitted:
+        supabase.table("status_events").update({"happened_at": when}).eq("event_id", submitted["event_id"]).execute()
+    else:
+        supabase.table("status_events").insert({
+            "tracking_id": tracking_id, "user_id": uid, "status": "Submitted", "happened_at": when,
+        }).execute()
 
 class EditJobBody(ManualJobBody):
     # Your application, not the job posting. Only changed when the form sends it
@@ -870,7 +1043,7 @@ def edit_tracked_job(tracking_id: int, body: EditJobBody):
     uid = get_current_user_id()
     row = (
         supabase.table("user_job_tracking")
-        .select("tracking_id, status, jobs(*)")
+        .select("tracking_id, status, jobs(*), status_events(*)")
         .eq("tracking_id", tracking_id)
         .eq("user_id", uid)
         .single()
@@ -895,12 +1068,13 @@ def edit_tracked_job(tracking_id: int, body: EditJobBody):
             value = submitted[field]
             overrides[column] = None if value in ("", [], None) else value
 
-    changes = {"overrides": overrides}
+    # Checked before anything is saved, so a bad date leaves the job untouched
+    when = None
     if "submitted_on" in body.model_fields_set:
-        changes["submitted_at"] = submitted_at_from_date(
-            body.submitted_on, row.data.get("status") or "", datetime.now(timezone.utc).date()
-        )
-    supabase.table("user_job_tracking").update(changes).eq("tracking_id", tracking_id).eq("user_id", uid).execute()
+        when = submitted_at_from_date(body.submitted_on, row.data.get("status") or "", datetime.now(timezone.utc).date())
+    supabase.table("user_job_tracking").update({"overrides": overrides}).eq("tracking_id", tracking_id).eq("user_id", uid).execute()
+    if "submitted_on" in body.model_fields_set:
+        set_submitted_date(uid, tracking_id, row.data.get("status_events") or [], when)
     return {"status": "ok"}
 
 

@@ -68,6 +68,9 @@ def test_guest_tracker_rows_hide_the_cv_files_and_bullets(monkeypatch):
         "cover_letter_path": "1/cover-letters/job-1.pdf",
         "tailored_cv": '{"sections": [{"entries": [{"heading": "Intern", "tailored_bullets": "- Built it"}]}]}',
         "jobs": {"employer_name": "Acme", "job_title": "Intern"},
+        "notes": "Ask about the team",
+        "contact": "Jane (recruiter)",
+        "status_events": [{"event_id": 5, "status": "Submitted", "happened_at": "2026-11-01T12:00:00+00:00", "note": "Referred by Bob"}],
     }]
 
     class FakeQuery:
@@ -84,9 +87,14 @@ def test_guest_tracker_rows_hide_the_cv_files_and_bullets(monkeypatch):
     assert guest["hasMyUpload"] is False and guest["hasCoverLetter"] is False
     assert guest["bullets"] is None and guest["edit"] is None
     assert guest["co"] == "Acme"  # the job itself still shows
+    # Things you wrote yourself stay private; the stage and its date still show
+    assert guest["notes"] is None and guest["contact"] is None
+    assert guest["history"][0]["status"] == "Submitted" and guest["history"][0]["note"] is None
+    assert guest["submittedAt"] == "2026-11-01T12:00:00+00:00"
 
     [owner] = client.get("/api/tracker", headers={"X-Access-Key": "secret"}).json()
     assert owner["hasMyUpload"] is True and owner["hasCoverLetter"] is True
+    assert owner["notes"] == "Ask about the team" and owner["history"][0]["note"] == "Referred by Bob"
     assert owner["bullets"] == [{"label": "Intern", "lines": [{"text": "Built it", "original": None}]}]
     assert "locked" not in owner
     # Links are made on click, never in the list, so they can't go stale on an open page

@@ -30,3 +30,52 @@ export function daysLabel(days) {
   if (days === 1) return 'Tomorrow'
   return `in ${days} days`
 }
+
+// Timestamps from the server (status history, interview times) are full ISO
+// strings. These read them on this device's calendar and clock.
+
+// A timestamp -> a Date at local midnight of its day, or null
+export function dayOf(iso) {
+  if (!iso) return null
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return null
+  d.setHours(0, 0, 0, 0)
+  return d
+}
+
+// Whole days from one day to another (rounded, so a clock change doesn't matter)
+export function daysBetween(from, to) {
+  return Math.round((to - from) / 86400000)
+}
+
+export function today() {
+  const d = new Date()
+  d.setHours(0, 0, 0, 0)
+  return d
+}
+
+// "Fri 21 Nov"
+export function shortDay(date) {
+  return date.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })
+}
+
+// "14:30"
+export function timeOf(date) {
+  return date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+}
+
+const pad = n => String(n).padStart(2, '0')
+
+// A timestamp as the "YYYY-MM-DD" a date field shows, or ''
+export function toDateInput(iso) {
+  const d = iso ? new Date(iso) : null
+  if (!d || Number.isNaN(d.getTime())) return ''
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
+
+// A timestamp as the "YYYY-MM-DDTHH:mm" a date-and-time field shows, or ''
+export function toDateTimeInput(iso) {
+  const d = iso ? new Date(iso) : null
+  if (!d || Number.isNaN(d.getTime())) return ''
+  return `${toDateInput(iso)}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 
 import { apiFetch, blockedForGuest, readResult } from '../api'
+import { toDateInput } from '../v2/dates'
 
 const EMPTY_FORM = {
   company: '', title: '', location: '', duration: '',
@@ -22,14 +23,6 @@ function toForm(edit) {
   }
 }
 
-// A saved timestamp as the YYYY-MM-DD a date field shows, on this device's calendar
-function toDateField(iso) {
-  if (!iso) return ''
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return ''
-  const pad = n => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
-}
 
 // tabId (new look only): the dashboard tab a new job goes into. Left out, the server picks the default tab.
 // application (edit only): { status, submittedAt } - your own record of applying, not part of the job posting.
@@ -40,7 +33,7 @@ export default function JobFormModal({ open, mode, initial, application, trackin
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState(null)
 
-  const savedSubmittedOn = toDateField(application?.submittedAt)
+  const savedSubmittedOn = toDateInput(application?.submittedAt)
   // A job still at Saved hasn't been applied to, so it can't have a submitted date yet
   const notSubmittedYet = !application || application.status === 'Saved / Not Applied'
 
@@ -161,7 +154,7 @@ export default function JobFormModal({ open, mode, initial, application, trackin
                   id="submittedOn"
                   type="date"
                   value={submittedOn}
-                  max={toDateField(new Date().toISOString())}
+                  max={toDateInput(new Date().toISOString())}
                   disabled={notSubmittedYet}
                   onChange={e => setSubmittedOn(e.target.value)}
                 />

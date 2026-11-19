@@ -13,37 +13,10 @@ from job_hunt_agent.api import (
     fields_from_jsonld,
     job_core_fields,
     location_filter,
-    next_submitted_at,
     pair_key,
     submitted_at_from_date,
     tailored_groups,
 )
-
-
-NOW = "2026-11-06T09:00:00+00:00"
-EARLIER = "2026-10-01T09:00:00+00:00"
-
-
-def test_first_move_to_submitted_sets_the_date():
-    assert next_submitted_at("Submitted", None, NOW) == NOW
-
-
-def test_returning_to_submitted_keeps_the_first_date():
-    assert next_submitted_at("Submitted", EARLIER, NOW) == EARLIER
-
-
-def test_later_stages_keep_the_date():
-    assert next_submitted_at("Online Assignment", EARLIER, NOW) == EARLIER
-    assert next_submitted_at("Rejected", EARLIER, NOW) == EARLIER
-    assert next_submitted_at("Untracked", EARLIER, NOW) == EARLIER
-
-
-def test_later_stages_do_not_invent_a_date():
-    assert next_submitted_at("Online Assignment", None, NOW) is None
-
-
-def test_going_back_to_saved_clears_the_date():
-    assert next_submitted_at("Saved / Not Applied", EARLIER, NOW) is None
 
 
 def test_core_fields_fall_back_to_asap_and_dashes():

@@ -21,6 +21,7 @@ export default function App() {
   const [jobs, setJobs] = useState([])
   const [hiddenJobCount, setHiddenJobCount] = useState(0) // tracked jobs a guest can't see
   const [drawerJob, setDrawerJob] = useState(null)
+  const [drawerTab, setDrawerTab] = useState('details') // 'details' | 'progress' | 'cv'
   const [generatingId, setGeneratingId] = useState(null)
   // null | { mode: 'add', tabId, prefill } | { mode: 'edit', job }
   const [jobModal, setJobModal] = useState(null)
@@ -188,12 +189,24 @@ export default function App() {
 
   // ---------- Jobs ----------
 
+  // Opens the drawer on a job, on the Details tab unless another is asked for
+  function openDrawer(job, tab = 'details') {
+    setDrawerJob(job)
+    setDrawerTab(tab)
+  }
+
+  // Changes one job in the table and, if it is open, in the drawer too
+  function updateJob(trackingId, changes) {
+    setJobs(prev => prev.map(j => (j.trackingId === trackingId ? { ...j, ...changes } : j)))
+    setDrawerJob(prev => (prev && prev.trackingId === trackingId ? { ...prev, ...changes } : prev))
+  }
+
   function handleStatusChange(trackingId, status) {
     if (blockedForGuest()) return
     if (status === 'Untracked') {
       setJobs(prev => prev.filter(j => j.trackingId !== trackingId))
     } else {
-      setJobs(prev => prev.map(j => (j.trackingId === trackingId ? { ...j, status } : j)))
+      updateJob(trackingId, { status })
     }
     apiFetch(`/api/tracker/${trackingId}/status`, {
       method: 'PATCH',
@@ -201,12 +214,61 @@ export default function App() {
       body: JSON.stringify({ status }),
     })
       .then(readJson)
-      .then(data => {
-        setJobs(prev => prev.map(j => (j.trackingId === trackingId ? { ...j, submittedAt: data.submittedAt } : j)))
-      })
+      .then(data => updateJob(trackingId, { submittedAt: data.submittedAt, history: data.history }))
       .catch(err => {
         console.error('Failed to update status:', err)
         loadTracker()
+      })
+  }
+
+  // One stage in a job's history: its date, scheduled time, done, or note.
+  // Resolves to false when saving failed, so the field can go back.
+  function handleStageChange(trackingId, eventId, changes) {
+    if (blockedForGuest()) return false
+    if ('done' in changes) {
+      // Tick the box straight away; the server's answer replaces it a moment later
+      setJobs(prev => prev.map(j => (j.trackingId === trackingId
+        ? { ...j, history: j.history.map(e => (e.id === eventId ? { ...e, done: changes.done } : e)) }
+        : j)))
+      setDrawerJob(prev => (prev && prev.trackingId === trackingId
+        ? { ...prev, history: prev.history.map(e => (e.id === eventId ? { ...e, done: changes.done } : e)) }
+        : prev))
+    }
+    return apiFetch(`/api/tracker/${trackingId}/history/${eventId}`, {
+      method: 'PATCH',
+      headers: JSON_HEADERS,
+      body: JSON.stringify(changes),
+    })
+      .then(res => readResult(res, 'That change could not be saved.'))
+      .then(data => {
+        updateJob(trackingId, { submittedAt: data.submittedAt, history: data.history })
+        return true
+      })
+      .catch(err => {
+        console.error('Failed to save stage:', err)
+        alert(err.message)
+        loadTracker()
+        return false
+      })
+  }
+
+  // The job's notes or contact. Resolves to false when saving failed.
+  function handleNotesChange(trackingId, changes) {
+    if (blockedForGuest()) return false
+    return apiFetch(`/api/tracker/${trackingId}/notes`, {
+      method: 'PATCH',
+      headers: JSON_HEADERS,
+      body: JSON.stringify(changes),
+    })
+      .then(res => readResult(res, 'Your notes could not be saved.'))
+      .then(data => {
+        updateJob(trackingId, data)
+        return true
+      })
+      .catch(err => {
+        console.error('Failed to save notes:', err)
+        alert(err.message)
+        return false
       })
   }
 
@@ -392,7 +454,8 @@ export default function App() {
             onUnlock={() => setGuestBlocked(true)}
             onStatusChange={handleStatusChange}
             onReorder={handleReorder}
-            onOpenDrawer={setDrawerJob}
+            onOpenDrawer={job => openDrawer(job)}
+            onOpenProgress={job => openDrawer(job, 'progress')}
             onUploadCv={handleUploadCv}
             onDeleteCv={handleDeleteCv}
             onOpenManualModal={handleOpenManualModal}
@@ -411,7 +474,7 @@ export default function App() {
             onSortChange={handleSortChange}
             filters={exploreFilters}
             onApplyFilters={handleApplyFilters}
-            onOpenDrawer={setDrawerJob}
+            onOpenDrawer={job => openDrawer(job)}
           />
         )}
         {view === 'cv' && <CVPage />}
@@ -420,11 +483,15 @@ export default function App() {
       <div className="overlay" onClick={() => setDrawerJob(null)} />
       <Drawer
         job={drawerJob}
+        tab={drawerTab}
+        onTabChange={setDrawerTab}
         tabs={tabs}
         onMoveJob={handleMoveJob}
         onEdit={job => !blockedForGuest() && setJobModal({ mode: 'edit', job })}
         onClose={() => setDrawerJob(null)}
         onGenerate={handleGenerateBullets}
+        onStageChange={handleStageChange}
+        onNotesChange={handleNotesChange}
         generating={drawerJob && generatingId === drawerJob.trackingId}
       />
 
