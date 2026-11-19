@@ -57,11 +57,16 @@ const SORT_VALUES = {
   minDuration: j => parseInt(j.min, 10) || null,
   deadline: j => parseDay(j.dl)?.getTime() ?? null,
   submitted: j => (j.submittedAt ? Date.parse(j.submittedAt) : null),
+  // Tracking ids count up as jobs are added, so this is the original order, before any arrow moves
+  added: j => j.trackingId,
 }
 
 // The choices in each header's sort menu. `column` is the header that shows the
-// menu: Job holds both company and title, so it offers both.
+// menu: Job holds both company and title, so it offers both. Date added sits on
+// the arrows column, since it is about the order itself.
 const SORT_OPTIONS = [
+  { column: 'added', key: 'added', dir: 'asc', label: 'Oldest first (original order)' },
+  { column: 'added', key: 'added', dir: 'desc', label: 'Newest first' },
   { column: 'status', key: 'status', dir: 'asc', label: 'Pipeline order' },
   { column: 'status', key: 'status', dir: 'desc', label: 'Reverse pipeline order' },
   { column: 'job', key: 'company', dir: 'asc', label: 'Company A → Z' },
@@ -79,7 +84,7 @@ const SORT_OPTIONS = [
   { column: 'submitted', key: 'submitted', dir: 'asc', label: 'Earliest first' },
   { column: 'submitted', key: 'submitted', dir: 'desc', label: 'Latest first' },
 ]
-const SORT_COLUMN_LABELS = { status: 'Status', job: 'Job', location: 'Location', duration: 'Duration', minDuration: 'Min. duration', deadline: 'Deadline', submitted: 'Submitted' }
+const SORT_COLUMN_LABELS = { added: 'Date added', status: 'Status', job: 'Job', location: 'Location', duration: 'Duration', minDuration: 'Min. duration', deadline: 'Deadline', submitted: 'Submitted' }
 
 function findSortOption(sort) {
   return sort ? SORT_OPTIONS.find(o => o.key === sort.key && o.dir === sort.dir) || null : null
@@ -115,7 +120,8 @@ function loadSort() {
 // A sortable column header: its label opens a small menu of sort choices, like
 // the filter button on an Excel column. The table scrolls sideways, which would
 // clip a menu inside it, so the menu is placed on the page under the header.
-function SortHeader({ column, label, sort, onSort }) {
+// With iconOnly the header shows just the arrow (the narrow arrows column).
+function SortHeader({ column, label, sort, onSort, iconOnly = false, className }) {
   const [menuAt, setMenuAt] = useState(null) // { top, left } while open
   const buttonRef = useRef(null)
   const options = SORT_OPTIONS.filter(o => o.column === column)
@@ -145,16 +151,17 @@ function SortHeader({ column, label, sort, onSort }) {
   }
 
   return (
-    <th aria-sort={active ? (active.dir === 'asc' ? 'ascending' : 'descending') : undefined}>
+    <th className={className} aria-sort={active ? (active.dir === 'asc' ? 'ascending' : 'descending') : undefined}>
       <button
         ref={buttonRef}
         className={`th-sort${active ? ' active' : ''}`}
         aria-haspopup="menu"
         aria-expanded={Boolean(menuAt)}
+        aria-label={iconOnly ? `Sort by ${label.toLowerCase()}` : undefined}
         title={`Sort by ${label.toLowerCase()}`}
         onClick={toggle}
       >
-        {label}
+        {!iconOnly && label}
         <Icon name={active ? (active.dir === 'asc' ? 'arrowUp' : 'arrowDown') : 'chevronDown'} size={13} />
       </button>
       {menuAt && (
@@ -598,7 +605,9 @@ export default function Dashboard({ jobs, hiddenJobCount, tabs, activeTab, tabCo
           <table className="cards">
             <thead>
               <tr>
-                {canReorder && <th className="c-move"><span className="sr-only">Move</span></th>}
+                {canReorder && (
+                  <SortHeader column="added" label="Date added" sort={sort} onSort={changeSort} iconOnly className="c-move" />
+                )}
                 {headColumns.map(c =>
                   sortableColumns.has(c.key)
                     ? <SortHeader key={c.key} column={c.key} label={c.label} sort={sort} onSort={changeSort} />
