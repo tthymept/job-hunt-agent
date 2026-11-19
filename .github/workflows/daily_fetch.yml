@@ -22,4 +22,5 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           RAPIDAPI_KEY: ${{ secrets.RAPIDAPI_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          THEIRSTACK_API_KEY: ${{ secrets.THEIRSTACK_API_KEY }}
         run: uv run python run_daily_fetch.py

@@ -11,6 +11,7 @@ from datetime import datetime, timedelta, timezone
 import psycopg2
 from dateutil import parser as date_parser
 from search_agent import search_jobs, store_jobs, enrich_pending_jobs
+from theirstack_agent import fetch_theirstack, last_run_started, uses_theirstack
 
 # The scheduled fetch reads every page JSearch has for the window (10 jobs a
 # page), stopping early once a page comes back empty. One page used to be the
@@ -94,10 +95,35 @@ def get_distinct_active_pairs(conn) -> list[tuple[str, str, str | None, datetime
     return pairs
 
 
+def mark_fetched(conn, pairs) -> None:
+    cur = conn.cursor()
+    for role, country, city, *_ in pairs:
+        cur.execute("""
+            UPDATE job_interests SET last_fetched_at = NOW()
+            WHERE role = %s AND country = %s AND city IS NOT DISTINCT FROM %s
+        """, (role, country, city))
+    conn.commit()
+    cur.close()
+
+
 def backfill_new_pair(role: str, country: str, city: str | None, conn) -> None:
     role = role.strip().lower() if role else role
     country = country.strip().lower() if country else country
     city = city.strip().lower() if city else None
+
+    if uses_theirstack(country):
+        # The month so far, skipping jobs already stored, so none is paid for twice
+        print(f"Backfilling from TheirStack: {role} in {country}")
+        fetch_theirstack([(role, country, city)], conn, run_type="theirstack_backfill")
+        cur = conn.cursor()
+        cur.execute("""
+            UPDATE job_interests SET backfilled = TRUE, last_fetched_at = NOW()
+            WHERE role = %s AND country = %s AND city IS NOT DISTINCT FROM %s
+        """, (role, country, city))
+        conn.commit()
+        cur.close()
+        enrich_pending_jobs(conn)
+        return
 
     print(f"Backfilling: {role} in {city + ', ' if city else ''}{country}")
     start = time.time()
@@ -128,8 +154,18 @@ def backfill_new_pair(role: str, country: str, city: str | None, conn) -> None:
 
 
 def run_daily_fetch(conn) -> None:
-    pairs = get_distinct_active_pairs(conn)
-    print(f"Fetching daily jobs for {len(pairs)} distinct interest pair(s)")
+    all_pairs = get_distinct_active_pairs(conn)
+    print(f"Fetching daily jobs for {len(all_pairs)} distinct interest pair(s)")
+
+    # Countries JSearch doesn't cover go to TheirStack, all in one request
+    theirstack_pairs = [p for p in all_pairs if uses_theirstack(p[1])]
+    pairs = [p for p in all_pairs if not uses_theirstack(p[1])]
+    if theirstack_pairs:
+        try:
+            fetch_theirstack(theirstack_pairs, conn, since=last_run_started(conn))
+            mark_fetched(conn, theirstack_pairs)
+        except Exception as e:
+            print(f"TheirStack fetch failed: {e}")
 
     for role, country, city, last_fetched_at in pairs:
         start = time.time()

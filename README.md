@@ -10,7 +10,7 @@ Click **View as guest** to look around without the access key. Guest mode is rea
 
 ## Features
 
-- **Automatic job search:** saved search interests (role + country/city) are fetched from JSearch every two days.
+- **Automatic job search:** saved search interests (role + country/city) are fetched every two days: from JSearch, and for Thailand (which JSearch doesn't cover) from TheirStack, which brings in LinkedIn, JobsDB and company career sites. Duplicates and non-internships are dropped before any Gemini call.
 - **LLM enrichment:** Gemini extracts duration, skills and application deadline from each posting.
 - **Application tracker:** status with a submitted date, deadlines, apply links, stage tiles, an upcoming-deadlines list and a deadline calendar. Columns can be shown or hidden, sorted from their headers like a spreadsheet, and rows put in your own order with the up and down arrows.
 - **Application progress:** every stage a job reaches is kept with its date (editable), so you can see how long each reply took. OA stages hold a due date and interviews a date and time, each with a done tick and a note. The table shows a short line under each status (e.g. "Waiting 12d", "Due Fri 21 Nov"), and each job has its own notes and contact.
@@ -29,7 +29,7 @@ Click **View as guest** to look around without the access key. Guest mode is rea
 | Backend | FastAPI, Uvicorn, Pydantic |
 | Data | Supabase (Postgres + Storage) |
 | AI | Gemini (`gemini-3.5-flash-lite`, `gemini-embedding-001`) |
-| Job data | JSearch API via RapidAPI |
+| Job data | JSearch API via RapidAPI; TheirStack API for Thailand |
 | Infra | Docker, Render, GitHub Actions, `uv` |
 
 ## Architecture
@@ -84,7 +84,7 @@ job-hunt-agent/
 - Python 3.14 with [`uv`](https://docs.astral.sh/uv/), and Node.js
 - A Supabase project with the tables `users`, `jobs`, `user_job_tracking`, `job_interests`, `fetch_logs`, and a Storage bucket named `resumes`
 - The SQL files in `migrations/` run once each, in order, in the Supabase SQL editor (they add `tracker_tabs`, the submitted date and the cover letter column)
-- A RapidAPI key subscribed to JSearch, and a Gemini API key
+- A RapidAPI key subscribed to JSearch, a Gemini API key, and a free TheirStack API key (for Thailand interests)
 
 ### 1. Configure
 
@@ -95,6 +95,7 @@ SUPABASE_URL=https://xxxx.supabase.co
 SUPABASE_SERVICE_KEY=...        # service_role key, backend only
 DATABASE_URL=postgresql://...   # use the Supabase pooler URL
 RAPIDAPI_KEY=...
+THEIRSTACK_API_KEY=...      # Thailand interests; stays within a 180-credit-a-month budget
 GEMINI_API_KEY=...
 APP_ACCESS_KEY=                 # optional locally; required when deployed
 ```
@@ -141,7 +142,7 @@ Every push to `main` redeploys. On the free plan the service sleeps after 15 min
 
 **Guest mode:** without the key, a visitor can choose **View as guest**. Those requests send `X-Guest` instead: reads are allowed, and anything that changes data gets a 403. The server limits what guests see: only the first 4 tracked jobs, no CV, no uploaded files, no tailored bullets and no email.
 
-**Scheduled fetch:** `.github/workflows/daily_fetch.yml` runs `run_daily_fetch.py` every two days. It needs the repository secrets `DATABASE_URL`, `RAPIDAPI_KEY` and `GEMINI_API_KEY`.
+**Scheduled fetch:** `.github/workflows/daily_fetch.yml` runs `run_daily_fetch.py` every two days. It needs the repository secrets `DATABASE_URL`, `RAPIDAPI_KEY`, `GEMINI_API_KEY` and `THEIRSTACK_API_KEY`.
 
 ## Testing
 
