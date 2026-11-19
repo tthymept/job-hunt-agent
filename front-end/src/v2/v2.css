@@ -182,6 +182,13 @@ input[type=checkbox]{accent-color:var(--primary-bg);width:15px;height:15px;margi
 .stage:hover{border-color:var(--border-strong);}
 .stage.active{border-color:var(--text);box-shadow:inset 0 0 0 1px var(--text);}
 .stage-label{display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--sub);font-weight:500;white-space:nowrap;}
+/* Stats under the stage tiles: one quiet line of numbers */
+.stats{display:flex;flex-wrap:wrap;gap:8px 28px;margin:0 0 16px;padding:10px 16px;border:1px solid var(--border);border-radius:10px;background:var(--surface);}
+.stat{display:flex;align-items:baseline;gap:8px;cursor:default;}
+.stat-value{font-size:15px;font-weight:600;font-variant-numeric:tabular-nums;}
+.stat-value.warn{color:var(--warn);}
+.stat-label{font-size:12.5px;color:var(--sub);}
+.stat-detail{color:var(--muted);}
 .stage-num{font-size:22px;font-weight:600;letter-spacing:-.02em;line-height:1.2;font-variant-numeric:tabular-nums;}
 .dot{width:7px;height:7px;border-radius:50%;flex:none;display:inline-block;background:var(--muted);}
 .dot.st-saved{background:var(--st-saved-tx);opacity:.55;}
@@ -242,6 +249,9 @@ td.c-open{width:1%;padding-left:4px;}
 th.c-move,td.c-move{width:1%;padding-right:0;}
 .move-btns{display:inline-flex;flex-direction:column;vertical-align:middle;}
 .move-btns .iconbtn{width:22px;height:16px;border-radius:4px;}
+/* The header's sort button is as wide as an arrow button, so its icon sits right above the arrows */
+th.c-move .th-sort{width:22px;height:22px;justify-content:center;border-radius:4px;vertical-align:middle;}
+th.c-move .th-sort:hover{background:var(--hover);}
 .iconbtn:disabled{opacity:.3;cursor:default;background:none;color:var(--muted);}
 .empty-row td{color:var(--sub);text-align:center;padding:28px 14px;}
 .empty-row:hover{background:none;}
@@ -303,6 +313,23 @@ th.c-move,td.c-move{width:1%;padding-right:0;}
   font-size:11.5px;font-weight:500;text-align:left;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .cal-item:hover{text-decoration:underline;}
 .cal-more{margin-top:3px;font-size:11px;color:var(--muted);padding-left:6px;}
+/* One colour per kind of date, borrowed from the matching status colours */
+.cal-item.k-deadline{background:var(--st-sub-bg);color:var(--st-sub-tx);}
+.cal-item.k-oa{background:var(--st-online-bg);color:var(--st-online-tx);}
+.cal-item.k-interview{background:var(--st-int1-bg);color:var(--st-int1-tx);}
+.cal-item.k-offer{background:var(--st-off-bg);color:var(--st-off-tx);}
+.cal-legend{display:flex;flex-wrap:wrap;gap:6px 16px;margin-top:12px;font-size:12px;color:var(--sub);}
+.cal-legend span{display:inline-flex;align-items:center;gap:6px;}
+.cal-swatch{width:9px;height:9px;border-radius:3px;display:inline-block;}
+.cal-swatch.k-deadline{background:var(--st-sub-tx);}
+.cal-swatch.k-oa{background:var(--st-online-tx);}
+.cal-swatch.k-interview{background:var(--st-int1-tx);}
+.cal-swatch.k-offer{background:var(--st-off-tx);}
+.upcoming-kind{font-weight:500;}
+.upcoming-kind.k-deadline{color:var(--st-sub-tx);}
+.upcoming-kind.k-oa{color:var(--st-online-tx);}
+.upcoming-kind.k-interview{color:var(--st-int1-tx);}
+.upcoming-kind.k-offer{color:var(--st-off-tx);}
 .upcoming{padding:14px 8px 8px;}
 .upcoming h3{font-size:14px;font-weight:600;padding:0 8px 8px;}
 .upcoming-empty{color:var(--sub);font-size:13px;padding:4px 8px 10px;}
@@ -504,6 +531,8 @@ th.c-move,td.c-move{width:1%;padding-right:0;}
   /* Side by side on touch screens, so the bigger buttons don't make every row tall */
   .move-btns{flex-direction:row;gap:2px;}
   .move-btns .iconbtn{width:32px;height:32px;}
+  /* Centred over the two side-by-side arrows (32 + 2 + 32) */
+  th.c-move .th-sort{width:66px;height:32px;}
   .sort-chip .iconbtn{width:28px;height:28px;}
   .pagenums button{min-width:38px;height:38px;}
   .seg{height:40px;}

@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import Icon from './Icon'
+import { AGENDA_KINDS, agendaItems } from './stages'
 
 const DOW = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 const MAX_SHOWN = 2 // company names shown per day before "+N more"
@@ -8,21 +9,21 @@ function pad(n) {
   return String(n).padStart(2, '0')
 }
 
+// onOpenJob(job, tab): an application deadline opens the job's details, an OA,
+// interview or offer opens its Progress tab
 export default function Calendar({ jobs = [], onOpenJob }) {
   const today = new Date()
   // The month being viewed lives in state: changing it re-renders the grid
   const [view, setView] = useState({ year: today.getFullYear(), month: today.getMonth() })
   const { year, month } = view
 
-  // Group tracked jobs by deadline: { '2026-10-24': [job, job], ... }
-  // Only real ISO dates are used, so "ASAP" or free-text deadlines are skipped
+  // Group what's coming up by day: { '2026-10-24': [item, item], ... }.
+  // "ASAP" and free-text deadlines have no date, so they don't appear.
   const byDate = {}
-  for (const j of jobs) {
-    const match = /^\d{4}-\d{2}-\d{2}/.exec(j.dl || '')
-    if (!match) continue
-    const key = match[0]
+  for (const item of agendaItems(jobs)) {
+    const key = `${item.date.getFullYear()}-${pad(item.date.getMonth() + 1)}-${pad(item.date.getDate())}`
     if (!byDate[key]) byDate[key] = []
-    byDate[key].push(j)
+    byDate[key].push(item)
   }
 
   // getDay() is 0 for Sunday; this shifts it so the week starts on Monday
@@ -66,14 +67,14 @@ export default function Calendar({ jobs = [], onOpenJob }) {
           return (
             <div className={`day${key === todayKey ? ' today' : ''}`} key={d}>
               <span className="daynum">{d}</span>
-              {items.slice(0, MAX_SHOWN).map(j => (
+              {items.slice(0, MAX_SHOWN).map(item => (
                 <button
-                  key={j.trackingId}
-                  className="cal-item"
-                  title={`${j.co} — ${j.title}`}
-                  onClick={() => onOpenJob?.(j)}
+                  key={item.key}
+                  className={`cal-item k-${item.kind}`}
+                  title={`${AGENDA_KINDS[item.kind].label}${item.time ? ` ${item.time}` : ''}: ${item.job.co} — ${item.job.title}`}
+                  onClick={() => onOpenJob?.(item.job, AGENDA_KINDS[item.kind].tab)}
                 >
-                  {j.co}
+                  {item.job.co}
                 </button>
               ))}
               {items.length > MAX_SHOWN && (
@@ -85,6 +86,11 @@ export default function Calendar({ jobs = [], onOpenJob }) {
         {/* Blank cells after the last day, so the final week is a full row */}
         {Array.from({ length: (7 - ((leadingBlanks + daysInMonth) % 7)) % 7 }).map((_, i) => (
           <div className="day blank" key={`tail-${i}`} />
+        ))}
+      </div>
+      <div className="cal-legend">
+        {Object.entries(AGENDA_KINDS).map(([kind, k]) => (
+          <span key={kind}><i className={`cal-swatch k-${kind}`} />{k.label}</span>
         ))}
       </div>
     </>

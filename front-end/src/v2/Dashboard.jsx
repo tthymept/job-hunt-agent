@@ -6,7 +6,7 @@ import Calendar from './Calendar'
 import TabBar from './TabBar'
 import Icon from './Icon'
 import { parseDay, formatDay, daysUntil, daysLabel } from './dates'
-import { statusNote } from './stages'
+import { AGENDA_KINDS, MIN_APPLIED_FOR_STATS, agendaItems, applicationStats, statusNote } from './stages'
 
 // The columns you can show or hide. The details arrow at the end of each row always stays.
 const COLUMNS = [
@@ -163,7 +163,7 @@ function SortHeader({ column, label, sort, onSort, iconOnly = false, className }
         onClick={toggle}
       >
         {!iconOnly && label}
-        <Icon name={active ? (active.dir === 'asc' ? 'arrowUp' : 'arrowDown') : 'chevronDown'} size={13} />
+        <Icon name={active ? (active.dir === 'asc' ? 'arrowUp' : 'arrowDown') : 'chevronDown'} size={iconOnly ? 14 : 13} />
       </button>
       {menuAt && (
         <>
@@ -305,36 +305,80 @@ function LockedRows({ onUnlock, colSpan }) {
   )
 }
 
-// The next few dated deadlines, soonest first
-function UpcomingDeadlines({ jobs, onOpenJob }) {
-  const upcoming = jobs
-    .map(job => ({ job, date: parseDay(job.dl) }))
-    .filter(item => item.date && daysUntil(item.date) >= 0)
-    .sort((a, b) => a.date - b.date)
-    .slice(0, 6)
+// The next few dated things to do, soonest first: deadlines for jobs you haven't
+// applied to, OA due dates, interviews and offer replies
+function Upcoming({ jobs, onOpenJob }) {
+  const upcoming = agendaItems(jobs).filter(item => daysUntil(item.date) >= 0).slice(0, 6)
 
   return (
     <div className="card upcoming">
-      <h3>Upcoming deadlines</h3>
+      <h3>Coming up</h3>
       {upcoming.length === 0 && (
-        <p className="upcoming-empty">No dated deadlines ahead. Jobs marked ASAP have no date to show.</p>
+        <p className="upcoming-empty">
+          Nothing dated ahead. Deadlines show for jobs you haven't applied to yet, and OA due dates and interviews once you add them on a job's Progress tab.
+        </p>
       )}
-      {upcoming.map(({ job, date }) => {
-        const days = daysUntil(date)
+      {upcoming.map(item => {
+        const days = daysUntil(item.date)
+        const kind = AGENDA_KINDS[item.kind]
         return (
-          <button className="upcoming-item" key={job.trackingId} onClick={() => onOpenJob(job)}>
+          <button className="upcoming-item" key={item.key} onClick={() => onOpenJob(item.job, kind.tab)}>
             <span className="datebox">
-              <b>{date.getDate()}</b>
-              {date.toLocaleDateString('en-GB', { month: 'short' })}
+              <b>{item.date.getDate()}</b>
+              {item.date.toLocaleDateString('en-GB', { month: 'short' })}
             </span>
             <span className="upcoming-main">
-              <span className="upcoming-co">{job.co}</span>
-              <span className="upcoming-title">{job.title}</span>
+              <span className="upcoming-co">{item.job.co}</span>
+              <span className="upcoming-title">
+                <span className={`upcoming-kind k-${item.kind}`}>{kind.label}{item.time ? ` ${item.time}` : ''}</span> · {item.job.title}
+              </span>
             </span>
             <span className={`due${days <= 7 ? ' soon' : ''}`}>{daysLabel(days)}</span>
           </button>
         )
       })}
+    </div>
+  )
+}
+
+// How applications in this tab are going, from their history. Hidden until
+// there are enough applications for the numbers to mean something.
+function StatsStrip({ jobs }) {
+  const stats = applicationStats(jobs)
+  if (stats.applied < MIN_APPLIED_FOR_STATS) return null
+  const items = [
+    {
+      value: `${stats.responseRate}%`,
+      label: 'Response rate',
+      detail: `${stats.replied} of ${stats.applied}`,
+      title: 'Applications that got any answer (an OA, interview, offer or rejection)',
+    },
+    {
+      value: stats.medianReplyDays == null ? '—' : `${stats.medianReplyDays} day${stats.medianReplyDays === 1 ? '' : 's'}`,
+      label: 'Typical reply time',
+      title: 'Median days from applying to the first answer',
+    },
+    {
+      value: `${stats.interviewRate}%`,
+      label: 'Reached interview',
+      detail: `${stats.interviewed} of ${stats.applied}`,
+      title: 'Applications that got to an interview or an offer',
+    },
+    {
+      value: stats.waitingLong,
+      label: 'Waiting 3+ weeks',
+      title: 'No news for 3 weeks or more since applying or finishing a stage. Worth a follow-up?',
+      warn: stats.waitingLong > 0,
+    },
+  ]
+  return (
+    <div className="stats" aria-label="Application stats">
+      {items.map(s => (
+        <div className="stat" key={s.label} title={s.title}>
+          <span className={`stat-value${s.warn ? ' warn' : ''}`}>{s.value}</span>
+          <span className="stat-label">{s.label}{s.detail && <span className="stat-detail"> · {s.detail}</span>}</span>
+        </div>
+      ))}
     </div>
   )
 }
@@ -456,6 +500,12 @@ export default function Dashboard({ jobs, hiddenJobCount, tabs, activeTab, tabCo
     changeSort(null)
   }
 
+  // A calendar or Coming up item opens its job on the tab it belongs to
+  function openFromAgenda(job, tab) {
+    if (tab === 'progress') onOpenProgress(job)
+    else onOpenDrawer(job)
+  }
+
   // Columns the header turns into sort menus; others stay plain labels
   const sortableColumns = new Set(SORT_OPTIONS.map(o => o.column))
 
@@ -521,6 +571,8 @@ export default function Dashboard({ jobs, hiddenJobCount, tabs, activeTab, tabCo
           </button>
         ))}
       </div>
+      {/* A guest sees only a few jobs, so stats from them would be wrong */}
+      {hiddenJobCount === 0 && !isGuest() && <StatsStrip jobs={jobs} />}
 
       <div className="card tablecard">
         <div className="toolbar">
@@ -722,12 +774,12 @@ export default function Dashboard({ jobs, hiddenJobCount, tabs, activeTab, tabCo
         </div>
       </div>
 
-      <div className="sectionhead"><h2>Deadlines</h2></div>
+      <div className="sectionhead"><h2>Calendar</h2></div>
       <div className="deadlines">
         <div className="card calcard">
-          <Calendar jobs={jobs} onOpenJob={onOpenDrawer} />
+          <Calendar jobs={jobs} onOpenJob={openFromAgenda} />
         </div>
-        <UpcomingDeadlines jobs={jobs} onOpenJob={onOpenDrawer} />
+        <Upcoming jobs={jobs} onOpenJob={openFromAgenda} />
       </div>
     </section>
   )
