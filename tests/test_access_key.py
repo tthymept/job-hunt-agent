@@ -87,7 +87,7 @@ def test_guest_tracker_rows_hide_the_cv_files_and_bullets(monkeypatch):
 
     [owner] = client.get("/api/tracker", headers={"X-Access-Key": "secret"}).json()
     assert owner["hasMyUpload"] is True and owner["hasCoverLetter"] is True
-    assert owner["bullets"] == [{"label": "Intern", "lines": ["Built it"]}]
+    assert owner["bullets"] == [{"label": "Intern", "lines": [{"text": "Built it", "original": None}]}]
     assert "locked" not in owner
     # Links are made on click, never in the list, so they can't go stale on an open page
     assert not any("url" in key.lower() for key in owner)

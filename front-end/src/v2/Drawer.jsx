@@ -1,8 +1,52 @@
-import { useEffect } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import JobDescription from '../components/JobDescription'
 import { ST_CLASS } from '../data'
 import Icon from './Icon'
 import { prettyDay } from './dates'
+
+// Puts text on the clipboard. The Clipboard API only exists on https and
+// localhost, so a phone opening the dev server by its network address falls
+// back to the older copy command. Returns false when neither worked.
+async function copyText(text) {
+  try {
+    await navigator.clipboard.writeText(text)
+    return true
+  } catch {
+    const area = document.createElement('textarea')
+    area.value = text
+    area.setAttribute('readonly', '')
+    area.style.position = 'fixed'
+    area.style.opacity = '0'
+    document.body.appendChild(area)
+    area.select()
+    const ok = document.execCommand('copy')
+    area.remove()
+    return ok
+  }
+}
+
+// A copy button that shows a tick for a moment once the text is copied.
+// With a label it is a small text button, without one an icon button.
+function CopyButton({ text, label }) {
+  const [copied, setCopied] = useState(false)
+  const timer = useRef(null)
+  useEffect(() => () => clearTimeout(timer.current), [])
+
+  async function handleCopy() {
+    if (!(await copyText(text))) return
+    setCopied(true)
+    clearTimeout(timer.current)
+    timer.current = setTimeout(() => setCopied(false), 1500)
+  }
+
+  const icon = <Icon name={copied ? 'check' : 'copy'} size={label ? 13 : 14} />
+  const title = copied ? 'Copied' : label || 'Copy this line'
+  return label ? (
+    <button className="btn sm quiet" title={title} onClick={handleCopy}>{icon} {copied ? 'Copied' : label}</button>
+  ) : (
+    <button className="iconbtn" title={title} aria-label={title} onClick={handleCopy}>{icon}</button>
+  )
+}
 
 export default function Drawer({ job, tabs = [], onMoveJob, onClose, onGenerate, onEdit, generating }) {
   // Jobs opened from Explore are flagged readOnly: no CV suggestions and no editing
@@ -91,12 +135,31 @@ export default function Drawer({ job, tabs = [], onMoveJob, onClose, onGenerate,
             <div>
               {job?.bullets ? (
                 job.bullets.length > 0 ? (
-                  job.bullets.map((g, i) => (
-                    <div key={i} className="bullet-group">
-                      <div className="bullet-label">{g.label}</div>
-                      {g.lines.map((line, j) => <div className="bullet" key={j}>{line}</div>)}
-                    </div>
-                  ))
+                  <>
+                    {/* Generated before rewrites were saved with their lines: nothing to compare yet */}
+                    {!job.bullets.some(g => g.lines.some(line => line.original)) && (
+                      <div className="none bullet-note">Click Refresh to see each rewrite next to your original line.</div>
+                    )}
+                    {job.bullets.map((g, i) => (
+                      <div key={i} className="bullet-group">
+                        <div className="bullet-head">
+                          <span className="bullet-label">{g.label}</span>
+                          <CopyButton text={g.lines.map(line => line.text).join('\n')} label="Copy all" />
+                        </div>
+                        {g.lines.map((line, j) => (
+                          <div className="bullet" key={j}>
+                            {line.original && (
+                              <div className="bullet-was"><span className="bullet-tag">Original</span>{line.original}</div>
+                            )}
+                            <div className="bullet-now">
+                              <span className="bullet-text">{line.text}</span>
+                              <CopyButton text={line.text} />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ))}
+                  </>
                 ) : (
                   <div className="none">
                     None of your CV entries were close enough to this job to suggest changes.

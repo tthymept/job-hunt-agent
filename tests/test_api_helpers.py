@@ -70,8 +70,28 @@ def test_tailored_groups_strip_bullet_markers_and_skip_untouched_entries():
             ],
         }]
     }
+    # Saved before rewrites were paired: the lines come without an original
     assert tailored_groups(tailored) == [
-        {"label": "Agoda — Data Intern", "lines": ["Built pipelines", "Shipped dashboards"]}
+        {"label": "Agoda — Data Intern", "lines": [
+            {"text": "Built pipelines", "original": None},
+            {"text": "Shipped dashboards", "original": None},
+        ]}
+    ]
+
+
+def test_tailored_groups_keep_each_rewrite_with_its_original():
+    tailored = {
+        "sections": [{
+            "title": "EXPERIENCE",
+            "entries": [{
+                "heading": "Agoda",
+                "tailored_bullets": "Built data pipelines in Python",
+                "tailored_pairs": [{"original": "Built pipelines", "rewritten": "Built data pipelines in Python"}],
+            }],
+        }]
+    }
+    assert tailored_groups(tailored) == [
+        {"label": "Agoda", "lines": [{"text": "Built data pipelines in Python", "original": "Built pipelines"}]}
     ]
 
 

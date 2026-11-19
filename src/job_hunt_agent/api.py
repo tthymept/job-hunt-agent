@@ -1049,15 +1049,23 @@ MAX_CV_BYTES = 10 * 1024 * 1024
 
 def tailored_groups(tailored: dict) -> list[dict]:
     """Turns the tailor agent's sections -> entries output into
-    [{label, lines}] groups for the drawer: one group per CV entry that was tailored."""
+    [{label, lines: [{text, original}]}] groups for the drawer: one group per CV
+    entry that was tailored. `original` is the CV line a rewrite came from, or
+    None for results saved before rewrites were paired with their lines."""
     groups = []
     for section in tailored.get("sections", []):
         for entry in section.get("entries", []):
-            text = entry.get("tailored_bullets")
-            if not text:
-                continue
-            lines = [re.sub(r"^\s*[-•*]\s*", "", line).strip() for line in text.splitlines()]
-            lines = [line for line in lines if line]
+            pairs = entry.get("tailored_pairs")
+            if pairs:
+                lines = [
+                    {"text": p["rewritten"], "original": p.get("original")}
+                    for p in pairs
+                    if p.get("rewritten")
+                ]
+            else:
+                text = entry.get("tailored_bullets") or ""
+                lines = [re.sub(r"^\s*[-•*]\s*", "", line).strip() for line in text.splitlines()]
+                lines = [{"text": line, "original": None} for line in lines if line]
             if not lines:
                 continue
             heading = (entry.get("heading") or "").strip()

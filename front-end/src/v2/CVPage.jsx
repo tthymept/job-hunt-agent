@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 
-import { API, apiFetch, readJson, accessKeyHeaders, blockedForGuest } from '../api'
+import { API, apiFetch, readJson, accessKeyHeaders, blockedForGuest, openFileLink } from '../api'
 import PdfViewer from '../components/PdfViewer'
 import Icon from './Icon'
 
@@ -99,7 +99,7 @@ export default function CVPage() {
 
   function downloadCv() {
     if (blockedForGuest()) return
-    if (cv?.downloadUrl) window.open(cv.downloadUrl, '_blank')
+    if (cv?.exists) openFileLink(`/api/cv/file-link`)
   }
 
   const hasCv = cv?.exists

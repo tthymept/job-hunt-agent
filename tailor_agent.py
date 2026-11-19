@@ -19,6 +19,7 @@ Run the DB-backed update for one tracked job:
 """
 
 import os
+import re
 import sys
 import json
 import argparse
@@ -178,8 +179,11 @@ def entry_label(entry: dict) -> str:
 # ---------------------------------------------------------------------------
 # GENERATION -- scoped to ONE entry at a time
 # ---------------------------------------------------------------------------
-def generate_tailored_bullets(label: str, bullets: list[str], job_description: str) -> str:
-    bullets_text = "\n".join(f"- {b}" for b in bullets)
+def generate_tailored_bullets(label: str, bullets: list[str], job_description: str) -> list[str]:
+    """One rewritten line per input line, in the same order, so each rewrite can be
+    shown next to its original. Falls back to splitting plain text into lines if
+    the model doesn't answer with a JSON list."""
+    bullets_text = "\n".join(f"{i}. {b}" for i, b in enumerate(bullets, 1))
 
     prompt = f"""You are a career coach tailoring ONE section of a candidate's CV for a specific job.
 This section is: {label}
@@ -187,23 +191,48 @@ This section is: {label}
 JOB DESCRIPTION:
 {job_description}
 
-EXISTING LINES FOR THIS SECTION:
+EXISTING LINES FOR THIS SECTION (numbered):
 {bullets_text}
 
 Task:
-Rewrite these lines to better match the language and priorities of the job
+Rewrite each line to better match the language and priorities of the job
 description, without inventing any new facts, numbers, or experience not
 already present. Keep each line's original substance intact -- you are
 reframing emphasis and wording, not fabricating new results. Keep the tone
-professional and concise. Return only the rewritten lines, one per line.
+professional and concise.
+
+Return a JSON array of exactly {len(bullets)} strings: item 1 is the rewrite of
+line 1, item 2 of line 2, and so on. Do not merge, split, drop or reorder lines,
+and do not include the numbers.
 """
 
     response = client.models.generate_content(
         model=GEN_MODEL,
         contents=prompt,
-        config=types.GenerateContentConfig(temperature=0.4),
+        config=types.GenerateContentConfig(temperature=0.4, response_mime_type="application/json"),
     )
-    return response.text
+    text = response.text or ""
+    try:
+        parsed = json.loads(text)
+        if isinstance(parsed, list) and all(isinstance(line, str) for line in parsed):
+            return [clean_line(line) for line in parsed if clean_line(line)]
+    except ValueError:
+        pass
+    return [clean_line(line) for line in text.splitlines() if clean_line(line)]
+
+
+def clean_line(line: str) -> str:
+    """Drops a leading bullet marker or number ("- ", "• ", "2. ") the model may add."""
+    return re.sub(r"^\s*(?:[-•*]|\d+[.)])\s*", "", line).strip()
+
+
+def pair_rewrites(originals: list[str], rewrites: list[str]) -> list[dict]:
+    """[{original, rewritten}] for the drawer. Pairs only when the counts match:
+    otherwise there is no telling which rewrite belongs to which line, so the
+    rewrites are kept without an original rather than paired wrongly."""
+    if len(originals) == len(rewrites):
+        return [{"original": o, "rewritten": r} for o, r in zip(originals, rewrites)]
+    return [{"original": None, "rewritten": r} for r in rewrites]
 
 
 # ---------------------------------------------------------------------------
@@ -239,11 +268,14 @@ def process_entry(entry: dict, jd_vector: np.ndarray, job_description: str) -> d
     passing_ascending = sorted(passing, key=lambda pair: pair[0])  # lowest passing score first
     bullets_to_tailor = [b for _, b in passing_ascending[:TOP_BULLETS_PER_ENTRY]]
 
-    tailored_text = generate_tailored_bullets(label, bullets_to_tailor, job_description)
+    rewrites = generate_tailored_bullets(label, bullets_to_tailor, job_description)
 
     return {
         **entry,
-        "tailored_bullets": tailored_text,
+        # Plain text, as before, so older readers (print_results) keep working
+        "tailored_bullets": "\n".join(rewrites),
+        # Each rewrite with the line it came from, for the before/after view
+        "tailored_pairs": pair_rewrites(bullets_to_tailor, rewrites),
         "relevance_score": top_score,
         "status": "tailored",
     }
