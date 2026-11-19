@@ -25,3 +25,13 @@ def test_empty_deadline_is_kept():
 
 def test_timezone_aware_deadline():
     assert is_deadline_stale("2026-10-01T23:59:00+08:00", CUTOFF)
+
+
+def test_daily_window_is_a_week_between_regular_runs():
+    from datetime import timedelta
+    from jobs_manager import daily_window
+    now = datetime(2026, 11, 19, 12, tzinfo=timezone.utc)
+    assert daily_window(now - timedelta(days=2), now) == "week"
+    # A missed run (or a first fetch) looks back a month so nothing in between is lost
+    assert daily_window(now - timedelta(days=6), now) == "month"
+    assert daily_window(None, now) == "month"

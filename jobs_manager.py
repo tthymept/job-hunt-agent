@@ -2,17 +2,30 @@
 jobs_manager.py
 ------------------
 Manage job_interests (saved searches) and run the daily fetch cycle:
-distinct active (role, location) pairs -> search_jobs -> insert_jobs -> enrich once
--> cleanup_stale_jobs.
+distinct active (role, location) pairs -> search_jobs (every page) -> store_jobs (filter, de-duplicate)
+-> enrich once -> cleanup_stale_jobs.
 """
 
 import time
 from datetime import datetime, timedelta, timezone
 import psycopg2
 from dateutil import parser as date_parser
-from search_agent import search_jobs, insert_jobs, enrich_pending_jobs
+from search_agent import search_jobs, store_jobs, enrich_pending_jobs
 
-DAILY_DATE_POSTED = "week"  # JSearch window for the daily run: today / 3days / week / month
+# The scheduled fetch reads every page JSearch has for the window (10 jobs a
+# page), stopping early once a page comes back empty. One page used to be the
+# limit, which silently dropped everything after the first 10 jobs.
+MAX_PAGES = 5
+# How far back it searches: a week normally (runs are 2 days apart; the rest is
+# slack for postings that reach JSearch late), a month after a missed run
+WEEK_WINDOW_MAX_GAP_DAYS = 5
+
+
+def daily_window(last_fetched_at: datetime | None, now: datetime) -> str:
+    """The JSearch date_posted window that covers everything since the last fetch."""
+    if last_fetched_at is None or now - last_fetched_at > timedelta(days=WEEK_WINDOW_MAX_GAP_DAYS):
+        return "month"
+    return "week"
 
 
 def add_interest(user_id: int, role: str, country: str, city: str | None, conn) -> dict:
@@ -68,9 +81,14 @@ def remove_interest(user_id: int, role: str, country: str, city: str | None, con
     cur.close()
 
 
-def get_distinct_active_pairs(conn) -> list[tuple[str, str, str | None]]:
+def get_distinct_active_pairs(conn) -> list[tuple[str, str, str | None, datetime | None]]:
+    """(role, country, city, when it was last fetched) for each active interest."""
     cur = conn.cursor()
-    cur.execute("SELECT DISTINCT role, country, city FROM job_interests WHERE status = 'active'") #'active', 'paused', 'removed'
+    cur.execute("""
+        SELECT role, country, city, MIN(last_fetched_at)
+        FROM job_interests WHERE status = 'active'
+        GROUP BY role, country, city
+    """)
     pairs = cur.fetchall()
     cur.close()
     return pairs
@@ -88,7 +106,7 @@ def backfill_new_pair(role: str, country: str, city: str | None, conn) -> None:
 
     try:
         jobs = search_jobs(role=role, country=country, city=city, num_pages=num_pages, date_posted=date_posted)
-        new_count = insert_jobs(jobs, conn)
+        new_count = store_jobs(jobs, role, conn)
         log_fetch(conn, "backfill", role, country, city, num_pages, date_posted,
                    num_jobs_found=len(jobs), num_jobs_new=new_count,
                    duration_seconds=round(time.time() - start, 2))
@@ -113,16 +131,19 @@ def run_daily_fetch(conn) -> None:
     pairs = get_distinct_active_pairs(conn)
     print(f"Fetching daily jobs for {len(pairs)} distinct interest pair(s)")
 
-    for role, country, city in pairs:
+    for role, country, city, last_fetched_at in pairs:
         start = time.time()
+        window = daily_window(last_fetched_at, datetime.now(timezone.utc))
         try:
-            jobs = search_jobs(role=role, country=country, city=city, num_pages=1, date_posted=DAILY_DATE_POSTED)
-            new_count = insert_jobs(jobs, conn)
-            log_fetch(conn, "daily_search", role, country, city, num_pages=1, date_posted=DAILY_DATE_POSTED,
+            jobs = search_jobs(role=role, country=country, city=city, num_pages=MAX_PAGES, date_posted=window)
+            new_count = store_jobs(jobs, role, conn)
+            log_fetch(conn, "daily_search", role, country, city, num_pages=MAX_PAGES, date_posted=window,
                        num_jobs_found=len(jobs), num_jobs_new=new_count,
                        duration_seconds=round(time.time() - start, 2))
+            if len(jobs) >= MAX_PAGES * 10:
+                print(f"Warning: '{role}' filled all {MAX_PAGES} pages; some jobs may be beyond them")
         except Exception as e:
-            log_fetch(conn, "daily_search", role, country, city, num_pages=1, date_posted=DAILY_DATE_POSTED,
+            log_fetch(conn, "daily_search", role, country, city, num_pages=MAX_PAGES, date_posted=window,
                        status="failed", error_message=str(e),
                        duration_seconds=round(time.time() - start, 2))
             continue
@@ -140,11 +161,10 @@ def run_daily_fetch(conn) -> None:
     pending_count = cur.fetchone()[0]
     cur.close()
 
-    expected_calls = -(-pending_count // 10)
     start = time.time()
-    enrich_pending_jobs(conn)
+    gemini_calls = enrich_pending_jobs(conn)
     log_fetch(conn, "enrichment", num_jobs_found=pending_count,
-               num_gemini_calls=expected_calls,
+               num_gemini_calls=gemini_calls,
                duration_seconds=round(time.time() - start, 2))
 
     start = time.time()
