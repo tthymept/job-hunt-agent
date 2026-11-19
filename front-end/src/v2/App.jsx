@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import Sidebar from './Sidebar'
 import Dashboard from './Dashboard'
 import Explore from './Explore'
@@ -210,6 +210,49 @@ export default function App() {
       })
   }
 
+  // ---------- My order ----------
+  // The arrows can be clicked quickly, so a tab's new order is shown at once and
+  // saved once the clicks pause: { tabId, ids, timer } while a save is waiting.
+  const pendingOrder = useRef(null)
+  const ORDER_SAVE_DELAY = 500
+
+  function saveOrder({ tabId, ids }) {
+    apiFetch(`/api/tabs/${tabId}/order`, {
+      method: 'PUT',
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ tracking_ids: ids }),
+    })
+      .then(res => readResult(res, 'The new order could not be saved.'))
+      .catch(err => {
+        console.error('Failed to save order:', err)
+        alert(err.message)
+        loadTracker() // show the order the server still has
+      })
+  }
+
+  // ids: every job in the tab, top to bottom
+  function handleReorder(ids) {
+    if (blockedForGuest() || !activeTab) return
+    const tabId = activeTab.id
+    setJobs(prev => {
+      const byId = new Map(prev.map(j => [j.trackingId, j]))
+      const queue = ids.map(id => byId.get(id)).filter(Boolean)
+      // The tab's jobs take the slots they already hold, in the new order; other tabs don't move
+      return prev.map(j => (j.tabId === tabId && queue.length ? queue.shift() : j))
+    })
+    const pending = pendingOrder.current
+    if (pending) {
+      clearTimeout(pending.timer)
+      if (pending.tabId !== tabId) saveOrder(pending) // a different tab's order: send it now
+    }
+    const next = { tabId, ids }
+    next.timer = setTimeout(() => {
+      pendingOrder.current = null
+      saveOrder(next)
+    }, ORDER_SAVE_DELAY)
+    pendingOrder.current = next
+  }
+
   async function handleAddToMyJobs(index) {
     if (blockedForGuest()) return
     const job = exploreJobs[index]
@@ -348,6 +391,7 @@ export default function App() {
             onDismissTabError={() => setTabError(null)}
             onUnlock={() => setGuestBlocked(true)}
             onStatusChange={handleStatusChange}
+            onReorder={handleReorder}
             onOpenDrawer={setDrawerJob}
             onUploadCv={handleUploadCv}
             onDeleteCv={handleDeleteCv}

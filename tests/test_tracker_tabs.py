@@ -1,7 +1,7 @@
 import pytest
 from fastapi import HTTPException
 
-from job_hunt_agent.api import clean_tab_name, default_tab, free_tab_name, name_taken, pick_target_tab, tabs_payload
+from job_hunt_agent.api import clean_tab_name, default_tab, free_tab_name, name_taken, new_positions, pick_target_tab, tabs_payload
 
 
 def tab(tab_id, enabled=True, is_default=False, name="Tab"):
@@ -91,3 +91,21 @@ def test_duplicate_name_is_refused_with_a_message():
         free_tab_name(tabs, "  intern   2027 ")
     assert refused.value.status_code == 400
     assert free_tab_name(tabs, " Intern  2028 ") == "Intern 2028"
+
+
+def test_new_order_follows_the_request():
+    assert new_positions([1, 2, 3], [3, 1, 2]) == {3: 1, 1: 2, 2: 3}
+
+
+def test_jobs_left_out_of_the_order_keep_their_place_below():
+    # Job 4 was added on another device after the page loaded
+    assert new_positions([1, 2, 3, 4], [2, 1, 3]) == {2: 1, 1: 2, 3: 3, 4: 4}
+
+
+def test_order_ignores_repeated_ids():
+    assert new_positions([1, 2], [2, 2, 1]) == {2: 1, 1: 2}
+
+
+def test_order_refuses_a_job_from_another_tab():
+    with pytest.raises(ValueError):
+        new_positions([1, 2], [1, 2, 99])

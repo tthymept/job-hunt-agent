@@ -99,6 +99,20 @@ const PATHS = {
     </>
   ),
   check: <path d="M20 6 9 17l-5-5" />,
+  chevronUp: <path d="m18 15-6-6-6 6" />,
+  chevronDown: <path d="m6 9 6 6 6-6" />,
+  arrowUp: (
+    <>
+      <path d="m5 12 7-7 7 7" />
+      <path d="M12 19V5" />
+    </>
+  ),
+  arrowDown: (
+    <>
+      <path d="M12 5v14" />
+      <path d="m19 12-7 7-7-7" />
+    </>
+  ),
   copy: (
     <>
       <rect x="8" y="8" width="14" height="14" rx="2" />

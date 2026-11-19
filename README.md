@@ -12,7 +12,7 @@ Click **View as guest** to look around without the access key. Guest mode is rea
 
 - **Automatic job search:** saved search interests (role + country/city) are fetched from JSearch every two days.
 - **LLM enrichment:** Gemini extracts duration, skills and application deadline from each posting.
-- **Application tracker:** status with a submitted date, deadlines, apply links, stage tiles, an upcoming-deadlines list and a deadline calendar. Columns can be shown or hidden.
+- **Application tracker:** status with a submitted date, deadlines, apply links, stage tiles, an upcoming-deadlines list and a deadline calendar. Columns can be shown or hidden, sorted from their headers like a spreadsheet, and rows put in your own order with the up and down arrows.
 - **Tabs:** split the dashboard into tabs (e.g. "Internships 2027", "Internships 2028"), move jobs between them, pick a default tab, and turn off adding to a tab you're done with.
 - **Files per job:** attach the CV and cover letter you sent for each job (PDF or Word, up to 10 MB).
 - **Add any job:** paste a posting URL (structured data → LLM → manual form fallback) or enter it by hand.
@@ -156,7 +156,7 @@ Tests use dummy keys and never call external services. They also run on every pu
 | --- | --- |
 | Jobs | `GET /api/explore-jobs`, `GET /api/explore-locations`, `POST /api/jobs/manual`, `POST /api/jobs/from-url` |
 | Tracker | `GET/POST /api/tracker`, `PATCH /api/tracker/{id}/status`, `PATCH /api/tracker/{id}/edit`, `PATCH /api/tracker/{id}/tab`, `POST/DELETE /api/tracker/{id}/upload?kind=cv\|cover_letter`, `POST /api/tracker/{id}/generate-bullets` |
-| Tabs | `GET/POST /api/tabs`, `PATCH/DELETE /api/tabs/{id}` |
+| Tabs | `GET/POST /api/tabs`, `PATCH/DELETE /api/tabs/{id}`, `PUT /api/tabs/{id}/order` |
 | CV | `GET/POST /api/cv`, `GET /api/cv/file` |
 | Interests | `GET/POST /api/interests`, `PATCH/DELETE /api/interests/{id}` |
 | Other | `GET /api/health`, `GET /api/me` |

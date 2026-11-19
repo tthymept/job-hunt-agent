@@ -223,6 +223,25 @@ th:first-child,td:first-child{padding-left:16px;}
 .job-co{font-size:12.5px;color:var(--sub);}
 .rowlink:hover .job-title{color:var(--accent);}
 td.c-open{width:1%;padding-left:4px;}
+/* Sorting: a sortable header is a button that opens a small menu, like Excel's column filter button */
+.th-sort{border:0;background:none;padding:0;margin:0;font:inherit;color:inherit;cursor:pointer;display:inline-flex;align-items:center;gap:4px;}
+.th-sort:hover,.th-sort.active{color:var(--text);}
+.th-sort .icon{opacity:.55;}
+.th-sort.active .icon,.th-sort:hover .icon{opacity:1;}
+.popover.sort-menu{position:fixed;right:auto;min-width:220px;}
+.sort-menu .menu-item{font-weight:500;flex-wrap:nowrap;}
+.menu-check{display:inline-flex;width:14px;flex-shrink:0;}
+.toolbar-title{display:flex;align-items:center;gap:8px 10px;flex-wrap:wrap;}
+.sort-chip{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 3px 0 10px;border:1px solid var(--border);border-radius:999px;
+  font-size:12.5px;font-weight:500;color:var(--sub);white-space:nowrap;}
+.sort-chip .iconbtn{width:22px;height:22px;border-radius:999px;}
+.sort-select{display:none;}
+/* My order: the small up and down arrows at the start of each row */
+th.c-move,td.c-move{width:1%;padding-right:0;}
+.move-btns{display:inline-flex;flex-direction:column;vertical-align:middle;}
+.move-btns .iconbtn{width:22px;height:16px;border-radius:4px;}
+.iconbtn:disabled{opacity:.3;cursor:default;background:none;color:var(--muted);}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0;}
 .empty-row td{color:var(--sub);text-align:center;padding:28px 14px;}
 .empty-row:hover{background:none;}
 /* My Uploads: two file slots (CV, cover letter) stacked in one cell. A filled slot
@@ -434,6 +453,10 @@ td.c-open{width:1%;padding-left:4px;}
   .btn{height:40px;padding:0 14px;}
   .btn.sm{height:34px;padding:0 12px;}
   .iconbtn{width:38px;height:38px;}
+  /* Side by side on touch screens, so the bigger buttons don't make every row tall */
+  .move-btns{flex-direction:row;gap:2px;}
+  .move-btns .iconbtn{width:32px;height:32px;}
+  .sort-chip .iconbtn{width:28px;height:28px;}
   .pagenums button{min-width:38px;height:38px;}
   .seg{height:40px;}
 }
@@ -485,6 +508,7 @@ td.c-open{width:1%;padding-left:4px;}
   .toolbar-tools .inputwrap{flex:1 1 100%;}
   .toolbar-tools .inputwrap input{width:100%;}
   .toolbar-tools select{flex:1;min-width:0;}
+  .toolbar-tools .sort-select{display:block;flex-basis:100%;}
 
   .drawer{width:100%;max-width:100%;border-left:none;}
   .drawer-foot .btn{flex:1;}
@@ -513,6 +537,10 @@ td.c-open{width:1%;padding-left:4px;}
   table.cards .job-title{font-size:15px;white-space:normal;}
   table.cards .job-co{white-space:normal;}
   table.cards td.c-open{position:absolute;top:10px;right:6px;}
+  /* The move arrows sit in the card's top corner, left of the details arrow */
+  table.cards td.c-move{position:absolute;top:10px;right:46px;width:auto;}
+  table.cards .move-btns{flex-direction:row;gap:2px;}
+  table.cards tr.can-move td.c-job{padding-right:120px;}
   table.cards tr.empty-row{display:block;}
 
   .calcard{padding:12px;}

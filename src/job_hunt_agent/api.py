@@ -343,6 +343,65 @@ def update_tab(tab_id: int, body: TabUpdateBody):
         supabase.table("tracker_tabs").update(changes).eq("tab_id", tab["tab_id"]).eq("user_id", uid).execute()
     return tabs_payload(load_tabs(uid))
 
+def new_positions(current_ids: list[int], requested_ids: list[int]) -> dict[int, int]:
+    """tracking_id -> position (1 = top) for a tab whose jobs are current_ids, in
+    their saved order, after putting requested_ids first in the order given. Jobs
+    the request leaves out (say, added from another device since the page loaded)
+    keep their order below them. Raises ValueError for a job not in the tab."""
+    if set(requested_ids) - set(current_ids):
+        raise ValueError("Some of those jobs aren't in this tab. Reload the page and try again.")
+    requested = list(dict.fromkeys(requested_ids))
+    left_out = [i for i in current_ids if i not in set(requested)]
+    return {tracking_id: n for n, tracking_id in enumerate(requested + left_out, 1)}
+
+def end_position(uid: int, tab_id: int) -> int:
+    """The position just below the last job in a tab: where a new or moved job goes."""
+    rows = (
+        supabase.table("user_job_tracking")
+        .select("position")
+        .eq("user_id", uid)
+        .eq("tab_id", tab_id)
+        .order("position", desc=True, nullsfirst=False)
+        .limit(1)
+        .execute()
+        .data
+    )
+    return ((rows[0].get("position") or 0) if rows else 0) + 1
+
+class TabOrderBody(BaseModel):
+    tracking_ids: list[int]
+
+@app.put("/api/tabs/{tab_id}/order")
+def save_tab_order(tab_id: int, body: TabOrderBody):
+    """Saves "My order" for a tab: the up and down arrows, and Save as my order."""
+    uid = get_current_user_id()
+    tabs = load_tabs(uid)
+    find_tab(tabs, tab_id)
+    query = (
+        supabase.table("user_job_tracking")
+        .select("tracking_id, position")
+        .eq("user_id", uid)
+        .neq("status", "Untracked")
+    )
+    # A job with no tab shows in the default tab (see get_tracker), so it is ordered there
+    if default_tab(tabs)["tab_id"] == tab_id:
+        query = query.or_(f"tab_id.eq.{tab_id},tab_id.is.null")
+    else:
+        query = query.eq("tab_id", tab_id)
+    rows = query.order("position", nullsfirst=False).order("tracking_id").execute().data or []
+    try:
+        positions = new_positions([r["tracking_id"] for r in rows], body.tracking_ids)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    # Only the rows that moved are written: one arrow click changes two
+    saved = {r["tracking_id"]: r.get("position") for r in rows}
+    for tracking_id, position in positions.items():
+        if saved[tracking_id] != position:
+            supabase.table("user_job_tracking").update({"position": position, "tab_id": tab_id}).eq(
+                "tracking_id", tracking_id
+            ).eq("user_id", uid).execute()
+    return {"status": "ok"}
+
 @app.delete("/api/tabs/{tab_id}")
 def delete_tab(tab_id: int):
     uid = get_current_user_id()
@@ -485,6 +544,8 @@ def get_tracker(request: Request, response: Response):
         .select("*, jobs(*)")
         .eq("user_id", uid)
         .neq("status", "Untracked")
+        # My order (the arrows on the dashboard); jobs from before it existed by when they were added
+        .order("position", nullsfirst=False)
         .order("tracking_id")
         .execute()
         .data
@@ -555,7 +616,7 @@ def move_to_tab(tracking_id: int, body: MoveTabBody):
     tab_id = target_tab_id(uid, body.tab_id)
     moved = (
         supabase.table("user_job_tracking")
-        .update({"tab_id": tab_id})
+        .update({"tab_id": tab_id, "position": end_position(uid, tab_id)})
         .eq("tracking_id", tracking_id)
         .eq("user_id", uid)
         .execute()
@@ -692,6 +753,7 @@ def track_job_for_user(uid: int, job_id: str, tab_id: int) -> str:
                 "status_updated_at": datetime.now(timezone.utc).isoformat(),
                 "submitted_at": None,
                 "tab_id": tab_id,
+                "position": end_position(uid, tab_id),
             }).eq("tracking_id", row["tracking_id"]).execute()
             return "retracked"
         return "already_tracked"
@@ -700,6 +762,7 @@ def track_job_for_user(uid: int, job_id: str, tab_id: int) -> str:
         "job_id": job_id,
         "status": "Saved / Not Applied",
         "tab_id": tab_id,
+        "position": end_position(uid, tab_id),  # new jobs go to the bottom of My order
     }).execute()
     return "added"
 

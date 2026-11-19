@@ -1,6 +1,6 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { STATUS, ST_CLASS } from '../data'
-import { blockedForGuest, openFileLink } from '../api'
+import { blockedForGuest, isGuest, openFileLink } from '../api'
 import { locationGroup } from '../locationGroup'
 import Calendar from './Calendar'
 import TabBar from './TabBar'
@@ -44,6 +44,140 @@ function loadHiddenColumns() {
   } catch {
     return []
   }
+}
+
+// What each sort compares. null means "no value" (ASAP deadline, no submitted
+// date, …) and always goes last, whichever way the column is sorted, as in Excel.
+const SORT_VALUES = {
+  status: j => STATUS.indexOf(j.status), // pipeline order, not alphabetical
+  company: j => j.co || null,
+  title: j => j.title || null,
+  location: j => (j.loc && j.loc !== '—' ? j.loc : null),
+  duration: j => (j.dur && j.dur !== '—' ? j.dur : null),
+  minDuration: j => parseInt(j.min, 10) || null,
+  deadline: j => parseDay(j.dl)?.getTime() ?? null,
+  submitted: j => (j.submittedAt ? Date.parse(j.submittedAt) : null),
+}
+
+// The choices in each header's sort menu. `column` is the header that shows the
+// menu: Job holds both company and title, so it offers both.
+const SORT_OPTIONS = [
+  { column: 'status', key: 'status', dir: 'asc', label: 'Pipeline order' },
+  { column: 'status', key: 'status', dir: 'desc', label: 'Reverse pipeline order' },
+  { column: 'job', key: 'company', dir: 'asc', label: 'Company A → Z' },
+  { column: 'job', key: 'company', dir: 'desc', label: 'Company Z → A' },
+  { column: 'job', key: 'title', dir: 'asc', label: 'Title A → Z' },
+  { column: 'job', key: 'title', dir: 'desc', label: 'Title Z → A' },
+  { column: 'location', key: 'location', dir: 'asc', label: 'A → Z' },
+  { column: 'location', key: 'location', dir: 'desc', label: 'Z → A' },
+  { column: 'duration', key: 'duration', dir: 'asc', label: 'A → Z' },
+  { column: 'duration', key: 'duration', dir: 'desc', label: 'Z → A' },
+  { column: 'minDuration', key: 'minDuration', dir: 'asc', label: 'Shortest first' },
+  { column: 'minDuration', key: 'minDuration', dir: 'desc', label: 'Longest first' },
+  { column: 'deadline', key: 'deadline', dir: 'asc', label: 'Earliest first' },
+  { column: 'deadline', key: 'deadline', dir: 'desc', label: 'Latest first' },
+  { column: 'submitted', key: 'submitted', dir: 'asc', label: 'Earliest first' },
+  { column: 'submitted', key: 'submitted', dir: 'desc', label: 'Latest first' },
+]
+const SORT_COLUMN_LABELS = { status: 'Status', job: 'Job', location: 'Location', duration: 'Duration', minDuration: 'Min. duration', deadline: 'Deadline', submitted: 'Submitted' }
+
+function findSortOption(sort) {
+  return sort ? SORT_OPTIONS.find(o => o.key === sort.key && o.dir === sort.dir) || null : null
+}
+
+// A copy of the list in the chosen order. Array sort keeps equal items in their
+// existing order, so jobs that tie stay in My order.
+function sortJobs(list, sort) {
+  if (!sort) return list
+  const value = SORT_VALUES[sort.key]
+  const flip = sort.dir === 'desc' ? -1 : 1
+  return [...list].sort((a, b) => {
+    const x = value(a)
+    const y = value(b)
+    if (x == null || y == null) return (x == null) - (y == null)
+    const diff = typeof x === 'string' ? x.localeCompare(y, undefined, { numeric: true, sensitivity: 'base' }) : x - y
+    return diff * flip
+  })
+}
+
+// The sort is remembered on this device, like the column choice. null = My order.
+const SORT_STORAGE = 'jobHuntSort'
+
+function loadSort() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(SORT_STORAGE))
+    return findSortOption(saved) ? { key: saved.key, dir: saved.dir } : null
+  } catch {
+    return null
+  }
+}
+
+// A sortable column header: its label opens a small menu of sort choices, like
+// the filter button on an Excel column. The table scrolls sideways, which would
+// clip a menu inside it, so the menu is placed on the page under the header.
+function SortHeader({ column, label, sort, onSort }) {
+  const [menuAt, setMenuAt] = useState(null) // { top, left } while open
+  const buttonRef = useRef(null)
+  const options = SORT_OPTIONS.filter(o => o.column === column)
+  const active = options.find(o => sort && o.key === sort.key && o.dir === sort.dir)
+
+  // The menu is pinned to where the header was, so scrolling or resizing closes it
+  useEffect(() => {
+    if (!menuAt) return
+    const close = () => setMenuAt(null)
+    window.addEventListener('scroll', close, true)
+    window.addEventListener('resize', close)
+    return () => {
+      window.removeEventListener('scroll', close, true)
+      window.removeEventListener('resize', close)
+    }
+  }, [menuAt])
+
+  function toggle() {
+    if (menuAt) return setMenuAt(null)
+    const rect = buttonRef.current.getBoundingClientRect()
+    setMenuAt({ top: rect.bottom + 6, left: Math.max(8, Math.min(rect.left - 8, window.innerWidth - 228)) })
+  }
+
+  function choose(option) {
+    onSort(option ? { key: option.key, dir: option.dir } : null)
+    setMenuAt(null)
+  }
+
+  return (
+    <th aria-sort={active ? (active.dir === 'asc' ? 'ascending' : 'descending') : undefined}>
+      <button
+        ref={buttonRef}
+        className={`th-sort${active ? ' active' : ''}`}
+        aria-haspopup="menu"
+        aria-expanded={Boolean(menuAt)}
+        title={`Sort by ${label.toLowerCase()}`}
+        onClick={toggle}
+      >
+        {label}
+        <Icon name={active ? (active.dir === 'asc' ? 'arrowUp' : 'arrowDown') : 'chevronDown'} size={13} />
+      </button>
+      {menuAt && (
+        <>
+          <div className="pop-shade" onClick={() => setMenuAt(null)} />
+          <div className="popover menu sort-menu" role="menu" style={menuAt}>
+            {options.map(o => (
+              <button key={`${o.key}-${o.dir}`} role="menuitemradio" aria-checked={o === active} className="menu-item" onClick={() => choose(o)}>
+                <span className="menu-check">{o === active && <Icon name="check" size={14} />}</span>
+                {o.label}
+              </button>
+            ))}
+            {sort && (
+              <button role="menuitem" className="menu-item" onClick={() => choose(null)}>
+                <span className="menu-check" />
+                Back to my order
+              </button>
+            )}
+          </div>
+        </>
+      )}
+    </th>
+  )
 }
 
 // Deadline cell: the date, plus how long is left while the job is still unapplied
@@ -185,7 +319,7 @@ function UpcomingDeadlines({ jobs, onOpenJob }) {
   )
 }
 
-export default function Dashboard({ jobs, hiddenJobCount, tabs, activeTab, tabCounts, onSelectTab, tabActions, tabError, onDismissTabError, onUnlock, onStatusChange, onOpenDrawer, onUploadCv, onDeleteCv, onOpenManualModal, onLoadFromUrl }) {
+export default function Dashboard({ jobs, hiddenJobCount, tabs, activeTab, tabCounts, onSelectTab, tabActions, tabError, onDismissTabError, onUnlock, onStatusChange, onReorder, onOpenDrawer, onUploadCv, onDeleteCv, onOpenManualModal, onLoadFromUrl }) {
   const [url, setUrl] = useState('')
   const [loadingUrl, setLoadingUrl] = useState(false)
   const [urlMessage, setUrlMessage] = useState(null)
@@ -250,7 +384,9 @@ export default function Dashboard({ jobs, hiddenJobCount, tabs, activeTab, tabCo
   const showJob = isShown('company') || isShown('title')
   const headColumns = shownColumns.filter(c => c.key !== 'company' && c.key !== 'title')
   if (showJob) headColumns.splice(isShown('status') ? 1 : 0, 0, { key: 'job', label: 'Job' })
-  const colSpan = headColumns.length + 1 // + the details arrow
+  // Guests can't change the order, so they get no arrows
+  const canReorder = Boolean(activeTab) && !isGuest()
+  const colSpan = headColumns.length + 1 + (canReorder ? 1 : 0) // + the details arrow and the move arrows
 
   function saveHiddenColumns(next) {
     setHiddenColumns(next)
@@ -264,6 +400,44 @@ export default function Dashboard({ jobs, hiddenJobCount, tabs, activeTab, tabCo
   function toggleColumn(key) {
     saveHiddenColumns(isShown(key) ? [...hiddenColumns, key] : hiddenColumns.filter(k => k !== key))
   }
+
+  // ---------- Sorting and My order ----------
+  // `jobs` arrives in My order (the order saved with the arrows). A sort only
+  // changes what is shown; clearing it brings My order straight back.
+  const [sort, setSort] = useState(loadSort)
+  const sortOption = findSortOption(sort)
+  const shownJobs = sortJobs(visibleJobs, sort)
+
+  function changeSort(next) {
+    setSort(next)
+    try {
+      if (next) localStorage.setItem(SORT_STORAGE, JSON.stringify(next))
+      else localStorage.removeItem(SORT_STORAGE)
+    } catch {
+      // Storage unavailable: the sort still applies until the page is reloaded
+    }
+  }
+
+  // Swaps a job with the row shown above (-1) or below (+1) it. With a filter on,
+  // that neighbour may not be next to it in the full list; they still swap places.
+  function moveJob(job, step) {
+    const neighbour = visibleJobs[visibleJobs.indexOf(job) + step]
+    if (!neighbour) return
+    const ids = jobs.map(j => j.trackingId)
+    const a = ids.indexOf(job.trackingId)
+    const b = ids.indexOf(neighbour.trackingId)
+    ;[ids[a], ids[b]] = [ids[b], ids[a]]
+    onReorder(ids)
+  }
+
+  // Keeps the sorted view as My order, then shows My order (which now looks the same)
+  function saveSortAsMyOrder() {
+    onReorder(sortJobs(jobs, sort).map(j => j.trackingId))
+    changeSort(null)
+  }
+
+  // Columns the header turns into sort menus; others stay plain labels
+  const sortableColumns = new Set(SORT_OPTIONS.map(o => o.column))
 
   return (
     <section>
@@ -330,13 +504,49 @@ export default function Dashboard({ jobs, hiddenJobCount, tabs, activeTab, tabCo
 
       <div className="card tablecard">
         <div className="toolbar">
-          <h2>
-            Job tracker
-            <span className="count">
-              {filtering ? `${visibleJobs.length} of ${jobCountLabel}` : jobCountLabel}
-            </span>
-          </h2>
+          <div className="toolbar-title">
+            <h2>
+              Job tracker
+              <span className="count">
+                {filtering ? `${visibleJobs.length} of ${jobCountLabel}` : jobCountLabel}
+              </span>
+            </h2>
+            {/* While sorted: what the sort is, a way back to My order, and a way to keep it */}
+            {sortOption && (
+              <>
+                <span className="sort-chip">
+                  <Icon name={sortOption.dir === 'asc' ? 'arrowUp' : 'arrowDown'} size={13} />
+                  {SORT_COLUMN_LABELS[sortOption.column]} · {sortOption.label}
+                  <button className="iconbtn" aria-label="Back to my order" title="Back to my order" onClick={() => changeSort(null)}>
+                    <Icon name="close" size={13} />
+                  </button>
+                </span>
+                {canReorder && (
+                  <button className="btn sm quiet" title="Keep this order as My order, so the arrows start from it" onClick={saveSortAsMyOrder}>
+                    Save as my order
+                  </button>
+                )}
+              </>
+            )}
+          </div>
           <div className="toolbar-tools">
+            {/* Phones show cards without a header row, so sorting moves into this dropdown */}
+            <select
+              className="sort-select"
+              aria-label="Sort"
+              value={sortOption ? `${sortOption.key}:${sortOption.dir}` : ''}
+              onChange={e => {
+                const [key, dir] = e.target.value.split(':')
+                changeSort(key ? { key, dir } : null)
+              }}
+            >
+              <option value="">My order</option>
+              {SORT_OPTIONS.map(o => (
+                <option key={`${o.key}:${o.dir}`} value={`${o.key}:${o.dir}`}>
+                  {SORT_COLUMN_LABELS[o.column]} · {o.label}
+                </option>
+              ))}
+            </select>
             <div className="inputwrap">
               <Icon name="search" size={15} />
               <input
@@ -388,13 +598,43 @@ export default function Dashboard({ jobs, hiddenJobCount, tabs, activeTab, tabCo
           <table className="cards">
             <thead>
               <tr>
-                {headColumns.map(c => <th key={c.key}>{c.label}</th>)}
+                {canReorder && <th className="c-move"><span className="sr-only">Move</span></th>}
+                {headColumns.map(c =>
+                  sortableColumns.has(c.key)
+                    ? <SortHeader key={c.key} column={c.key} label={c.label} sort={sort} onSort={changeSort} />
+                    : <th key={c.key}>{c.label}</th>
+                )}
                 <th></th>
               </tr>
             </thead>
             <tbody>
-              {visibleJobs.map(j => (
-                <tr key={j.trackingId}>
+              {shownJobs.map((j, i) => (
+                <tr key={j.trackingId} className={canReorder ? 'can-move' : undefined}>
+                  {canReorder && (
+                    <td className="c-move">
+                      {/* The arrows move a job in My order, so they rest while a sort is on */}
+                      <span className="move-btns" title={sortOption ? 'Clear the sort to reorder' : undefined}>
+                        <button
+                          className="iconbtn"
+                          aria-label={`Move ${j.title} up`}
+                          title={sortOption ? undefined : 'Move up'}
+                          disabled={Boolean(sortOption) || i === 0}
+                          onClick={() => moveJob(j, -1)}
+                        >
+                          <Icon name="chevronUp" size={14} />
+                        </button>
+                        <button
+                          className="iconbtn"
+                          aria-label={`Move ${j.title} down`}
+                          title={sortOption ? undefined : 'Move down'}
+                          disabled={Boolean(sortOption) || i === shownJobs.length - 1}
+                          onClick={() => moveJob(j, 1)}
+                        >
+                          <Icon name="chevronDown" size={14} />
+                        </button>
+                      </span>
+                    </td>
+                  )}
                   {isShown('status') && (
                     <td className="c-full">
                       <span className={`status st-${ST_CLASS[j.status]}`}>
