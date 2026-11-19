@@ -10,7 +10,7 @@ import hmac
 from html import unescape
 from pathlib import Path
 from urllib.parse import urlparse
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import requests
 from bs4 import BeautifulSoup
@@ -843,12 +843,34 @@ def editable_fields(raw: dict) -> dict:
         "description": raw.get("job_description") or raw.get("short_description") or "",
     }
 
+def submitted_at_from_date(value: str | None, status: str, today: date) -> str | None:
+    """The submitted_at to store for a date typed into the Edit job form
+    ("YYYY-MM-DD", or None/"" to clear it). Kept at noon UTC, so it shows as the
+    same day in any time zone. Raises 400 for a bad or future date, or a date on
+    a job that hasn't been submitted yet."""
+    if not value:
+        return None
+    if status in ("Saved / Not Applied", "Untracked"):
+        raise HTTPException(status_code=400, detail="Mark the job as Submitted first, then you can change the date.")
+    try:
+        day = date.fromisoformat(value)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="That submitted date isn't a valid date.")
+    if day > today + timedelta(days=1):  # a day of slack for time zones ahead of UTC
+        raise HTTPException(status_code=400, detail="The submitted date can't be in the future.")
+    return f"{day.isoformat()}T12:00:00+00:00"
+
+class EditJobBody(ManualJobBody):
+    # Your application, not the job posting. Only changed when the form sends it
+    # (it does when the date was edited): "YYYY-MM-DD", or null to clear it.
+    submitted_on: str | None = None
+
 @app.patch("/api/tracker/{tracking_id}/edit")
-def edit_tracked_job(tracking_id: int, body: ManualJobBody):
+def edit_tracked_job(tracking_id: int, body: EditJobBody):
     uid = get_current_user_id()
     row = (
         supabase.table("user_job_tracking")
-        .select("tracking_id, jobs(*)")
+        .select("tracking_id, status, jobs(*)")
         .eq("tracking_id", tracking_id)
         .eq("user_id", uid)
         .single()
@@ -873,7 +895,12 @@ def edit_tracked_job(tracking_id: int, body: ManualJobBody):
             value = submitted[field]
             overrides[column] = None if value in ("", [], None) else value
 
-    supabase.table("user_job_tracking").update({"overrides": overrides}).eq("tracking_id", tracking_id).eq("user_id", uid).execute()
+    changes = {"overrides": overrides}
+    if "submitted_on" in body.model_fields_set:
+        changes["submitted_at"] = submitted_at_from_date(
+            body.submitted_on, row.data.get("status") or "", datetime.now(timezone.utc).date()
+        )
+    supabase.table("user_job_tracking").update(changes).eq("tracking_id", tracking_id).eq("user_id", uid).execute()
     return {"status": "ok"}
 
 

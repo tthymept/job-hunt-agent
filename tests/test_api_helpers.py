@@ -1,3 +1,5 @@
+from datetime import date
+
 import pytest
 from fastapi import HTTPException
 
@@ -13,6 +15,7 @@ from job_hunt_agent.api import (
     location_filter,
     next_submitted_at,
     pair_key,
+    submitted_at_from_date,
     tailored_groups,
 )
 
@@ -167,4 +170,27 @@ def test_check_upload_accepts_pdf_and_word_files():
 def test_check_upload_refuses_bad_files(filename, contents):
     with pytest.raises(HTTPException) as e:
         check_upload(filename, contents)
+    assert e.value.status_code == 400
+
+
+TODAY = date(2026, 11, 19)
+
+
+def test_submitted_date_is_kept_at_noon_utc():
+    assert submitted_at_from_date("2026-11-03", "Interview Round 1", TODAY) == "2026-11-03T12:00:00+00:00"
+
+
+def test_clearing_the_submitted_date():
+    assert submitted_at_from_date("", "Submitted", TODAY) is None
+    assert submitted_at_from_date(None, "Submitted", TODAY) is None
+
+
+@pytest.mark.parametrize("value, status", [
+    ("2026-11-03", "Saved / Not Applied"),
+    ("03/11/2026", "Submitted"),
+    ("2026-11-25", "Submitted"),
+], ids=["not-submitted-yet", "not-iso", "future"])
+def test_bad_submitted_dates_are_refused(value, status):
+    with pytest.raises(HTTPException) as e:
+        submitted_at_from_date(value, status, TODAY)
     assert e.value.status_code == 400

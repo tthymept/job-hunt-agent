@@ -432,6 +432,7 @@ export default function App() {
         open={jobModal !== null}
         mode={jobModal?.mode}
         initial={jobModal?.job?.edit || jobModal?.prefill}
+        application={jobModal?.job ? { status: jobModal.job.status, submittedAt: jobModal.job.submittedAt } : null}
         trackingId={jobModal?.job?.trackingId}
         tabId={jobModal?.tabId}
         onClose={() => setJobModal(null)}
