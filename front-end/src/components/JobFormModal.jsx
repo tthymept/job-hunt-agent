@@ -105,34 +105,11 @@ export default function JobFormModal({ open, mode, initial, application, trackin
         <h3>{isEdit ? 'Edit Job' : 'Add Job Manually'}</h3>
         <div className="sub">
           {isEdit
-            ? 'Your application details are yours alone. Job details come from the posting: changing them only affects your tracker.'
+            ? 'Changes only apply to your own tracker — the original listing stays untouched.'
             : 'Fill in what you know — only Company and Job Title are required.'}
         </div>
 
         <form onSubmit={handleSubmit}>
-          {/* Kept apart from the job fields: this is what you did, not what the posting says */}
-          {isEdit && (
-            <fieldset className="form-section mine">
-              <legend className="form-section-title">Your application</legend>
-              <div className="field-row">
-                <label htmlFor="submittedOn">Submitted on</label>
-                <input
-                  id="submittedOn"
-                  type="date"
-                  value={submittedOn}
-                  max={toDateField(new Date().toISOString())}
-                  disabled={notSubmittedYet}
-                  onChange={e => setSubmittedOn(e.target.value)}
-                />
-                <span className="field-hint">
-                  {notSubmittedYet
-                    ? 'Set the status to Submitted first. The date is filled in then, and you can change it here.'
-                    : 'Filled in when you marked the job Submitted. Change it if you applied on a different day.'}
-                </span>
-              </div>
-            </fieldset>
-          )}
-
           {isEdit && <div className="form-section-title">Job details</div>}
           <div className="field-grid">
             <div className="field-row">
@@ -173,6 +150,29 @@ export default function JobFormModal({ open, mode, initial, application, trackin
             <label>Description</label>
             <textarea value={form.description} onChange={e => update('description', e.target.value)} />
           </div>
+
+          {/* Kept apart from the job fields: this is what you did, not what the posting says */}
+          {isEdit && (
+            <fieldset className="form-section mine">
+              <legend className="form-section-title">Your application</legend>
+              <div className="field-row">
+                <label htmlFor="submittedOn">Submitted on</label>
+                <input
+                  id="submittedOn"
+                  type="date"
+                  value={submittedOn}
+                  max={toDateField(new Date().toISOString())}
+                  disabled={notSubmittedYet}
+                  onChange={e => setSubmittedOn(e.target.value)}
+                />
+                <span className="field-hint">
+                  {notSubmittedYet
+                    ? 'Set the status to Submitted first, then you can change the date here.'
+                    : 'Change it if you applied on a different day.'}
+                </span>
+              </div>
+            </fieldset>
+          )}
 
           {error && <div className="jd" style={{ color: '#991b1b' }}>{error}</div>}
 
